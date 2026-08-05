@@ -1,11 +1,14 @@
 import { X509Certificate } from "node:crypto";
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { getCertificateContents } from "@/lib/repository";
 import { createZipArchive } from "@/lib/zip";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || "");
   if (!id) return NextResponse.json({ error: "证书 ID 不能为空" }, { status: 400 });

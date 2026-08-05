@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { getNotificationSettings, saveNotificationSettings } from "@/lib/repository";
 import type { NotificationSettings } from "@/lib/types";
 
@@ -15,11 +16,15 @@ function publicSettings(settings: NotificationSettings) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   return NextResponse.json({ data: publicSettings(await getNotificationSettings()) });
 }
 
 export async function PUT(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const current = await getNotificationSettings();
   const body = await request.json().catch(() => ({}));
   const settings: NotificationSettings = {

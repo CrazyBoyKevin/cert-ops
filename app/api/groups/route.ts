@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { createGroup, deleteGroup, listGroups, updateGroup } from "@/lib/repository";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   return NextResponse.json(await listGroups());
 }
 
 export async function POST(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({}));
   const name = String(body.name || "").trim();
   if (!name || name.length > 80) return NextResponse.json({ error: "请输入 1–80 个字符的分组名称" }, { status: 400 });
@@ -17,6 +22,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || "");
   const name = String(body.name || "").trim();
@@ -33,6 +40,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || "");
   if (!id) return NextResponse.json({ error: "分组 ID 不能为空" }, { status: 400 });

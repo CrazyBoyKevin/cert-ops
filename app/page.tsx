@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Database, Download, FileKey2,
-  Folder, FolderPlus, Languages, LockKeyhole, Mail, MessageSquare, MoreHorizontal, Pencil, Plus,
+  Folder, FolderPlus, Languages, LockKeyhole, LogOut, Mail, MessageSquare, Pencil, Plus,
   RefreshCw, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Trash2, UploadCloud,
   WifiOff, X,
 } from "lucide-react";
@@ -15,6 +15,15 @@ const EMPTY_SETTINGS: NotificationSettings = {
   emailEnabled: false, smtpHost: "", smtpPort: 465, smtpSecure: true, smtpUser: "",
   smtpPassword: "", emailFrom: "", emailRecipients: "",
 };
+
+async function authenticatedFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, init);
+  if (response.status === 401) {
+    window.location.replace("/login");
+    throw new Error("UNAUTHORIZED");
+  }
+  return response;
+}
 
 function daysUntil(date: string) {
   return Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000);
@@ -60,13 +69,15 @@ export default function Home() {
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [settings, setSettings] = useState<NotificationSettings>(EMPTY_SETTINGS);
   const [language, setLanguage] = useState<Language>("zh-CN");
+  const [currentUsername, setCurrentUsername] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
   const copy = messages[language];
 
   async function loadData(showLoading = false) {
     if (showLoading) setLoading(true);
     try {
       const [certResponse, groupResponse, settingsResponse] = await Promise.all([
-        fetch("/api/certificates", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/settings", { cache: "no-store" }),
+        authenticatedFetch("/api/certificates", { cache: "no-store" }), authenticatedFetch("/api/groups", { cache: "no-store" }), authenticatedFetch("/api/settings", { cache: "no-store" }),
       ]);
       const [certJson, groupJson, settingsJson] = await Promise.all([certResponse.json(), groupResponse.json(), settingsResponse.json()]);
       setCertificates(certJson.data || []);
@@ -93,19 +104,21 @@ export default function Home() {
       }, 0);
     }
     Promise.all([
-      fetch("/api/certificates", { cache: "no-store" }),
-      fetch("/api/groups", { cache: "no-store" }),
-      fetch("/api/settings", { cache: "no-store" }),
+      authenticatedFetch("/api/certificates", { cache: "no-store" }),
+      authenticatedFetch("/api/groups", { cache: "no-store" }),
+      authenticatedFetch("/api/settings", { cache: "no-store" }),
+      authenticatedFetch("/api/auth/session", { cache: "no-store" }),
     ])
-      .then(async ([certResponse, groupResponse, settingsResponse]) => Promise.all([
-        certResponse.json(), groupResponse.json(), settingsResponse.json(),
+      .then(async ([certResponse, groupResponse, settingsResponse, sessionResponse]) => Promise.all([
+        certResponse.json(), groupResponse.json(), settingsResponse.json(), sessionResponse.json(),
       ]))
-      .then(([certJson, groupJson, settingsJson]) => {
+      .then(([certJson, groupJson, settingsJson, sessionJson]) => {
         if (!active) return;
         setCertificates(certJson.data || []);
         setGroups(groupJson.data || []);
         setStorage(certJson.storage || groupJson.storage || "demo");
         setSettings({ ...EMPTY_SETTINGS, ...(settingsJson.data || {}) });
+        setCurrentUsername(sessionJson.data?.username || "");
       })
       .catch(() => {
         if (active) setToast({ type: "error", text: messages["zh-CN"].operationFailed });
@@ -128,6 +141,16 @@ export default function Home() {
     showToast("success", messages[next].languageChanged);
   }
 
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.replace("/login");
+    }
+  }
+
   const filtered = useMemo(() => certificates.filter((certificate) => {
     const query = search.toLowerCase().trim();
     const matchesSearch = !query || certificate.primaryDomain.toLowerCase().includes(query) || certificate.name.toLowerCase().includes(query) || certificate.issuer.toLowerCase().includes(query);
@@ -146,7 +169,7 @@ export default function Home() {
 
   async function handleDelete() {
     if (!deleteTarget || !deleteConfirmed) return;
-    const response = await fetch("/api/certificates", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleteTarget.id, confirmed: true }) });
+    const response = await authenticatedFetch("/api/certificates", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleteTarget.id, confirmed: true }) });
     const json = await response.json();
     if (!response.ok) return showToast("error", json.error || copy.operationFailed);
     setCertificates((items) => items.filter((item) => item.id !== deleteTarget.id));
@@ -157,7 +180,7 @@ export default function Home() {
   }
 
   async function persistSettings(silent = false) {
-    const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+    const response = await authenticatedFetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
     const json = await response.json();
     if (!response.ok) { showToast("error", json.error || copy.operationFailed); return false; }
     setSettings(json.data);
@@ -167,7 +190,7 @@ export default function Home() {
 
   async function testNotification() {
     if (!(await persistSettings(true))) return;
-    const response = await fetch("/api/notifications/test", { method: "POST" });
+    const response = await authenticatedFetch("/api/notifications/test", { method: "POST" });
     const json = await response.json();
     if (!response.ok || !json.success) {
       const details = Array.isArray(json.results) ? json.results.filter((item: { success: boolean }) => !item.success).map((item: { detail: string }) => item.detail).join("；") : "";
@@ -196,7 +219,7 @@ export default function Home() {
         </div>
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setSettingsOpen(true)}><Settings size={18} /><span>{copy.systemSettings}</span></button>
-          <div className="user-card"><span className="avatar">K</span><span><strong>{copy.administrator}</strong><small>{copy.localWorkspace}</small></span><MoreHorizontal size={17} /></div>
+          <div className="user-card"><span className="avatar">{(currentUsername[0] || "A").toUpperCase()}</span><span><strong>{currentUsername || copy.administrator}</strong><small>{copy.administrator}</small></span><button className="user-logout" aria-label={copy.logout} title={copy.logout} disabled={loggingOut} onClick={() => void handleLogout()}><LogOut size={16} /></button></div>
         </div>
       </aside>
 
@@ -301,7 +324,7 @@ function UploadModal({ copy, groups, onClose, onSuccess, onError }: { copy: Mess
     if (certificateFile) form.set("certificateFile", certificateFile);
     if (privateKeyFile) form.set("privateKeyFile", privateKeyFile);
     try {
-      const response = await fetch("/api/certificates", { method: "POST", body: form });
+      const response = await authenticatedFetch("/api/certificates", { method: "POST", body: form });
       const json = await response.json();
       if (!response.ok) return onError(json.error || copy.operationFailed);
       onSuccess(`${json.data.primaryDomain} ${copy.parsedSaved}`);
@@ -344,7 +367,7 @@ function EditCertificateModal({ copy, certificate, groups, onClose, onUpdated, o
     event.preventDefault();
     setSaving(true);
     try {
-      const response = await fetch("/api/certificates", {
+      const response = await authenticatedFetch("/api/certificates", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: certificate.id, name, groupId }),
@@ -401,7 +424,7 @@ function ChannelCard({ icon, title, description, enabled, onToggle, children }: 
 function GroupModal({ copy, onClose, onCreated, onError }: { copy: Messages; onClose: () => void; onCreated: (group: Group) => void; onError: (message: string) => void }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); const response = await fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }); const json = await response.json(); setSaving(false); if (!response.ok) return onError(json.error || copy.operationFailed); onCreated(json.data); }
+  async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); const response = await authenticatedFetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }); const json = await response.json(); setSaving(false); if (!response.ok) return onError(json.error || copy.operationFailed); onCreated(json.data); }
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><FolderPlus size={20} /></span><h2>{copy.groupTitle}</h2><p>{copy.groupDesc}</p><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required placeholder={copy.groupPlaceholder} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.createGroup}</button></div></form></div>;
 }
 
@@ -413,7 +436,7 @@ function EditGroupModal({ copy, group, onClose, onDelete, onUpdated, onError }: 
     event.preventDefault();
     setSaving(true);
     try {
-      const response = await fetch("/api/groups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id, name }) });
+      const response = await authenticatedFetch("/api/groups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id, name }) });
       const json = await response.json();
       if (!response.ok) return onError(json.error || copy.operationFailed);
       onUpdated(json.data);
@@ -449,7 +472,7 @@ function DeleteGroupModal({ copy, group, onClose, onDeleted, onError }: { copy: 
   async function confirmDelete() {
     setDeleting(true);
     try {
-      const response = await fetch("/api/groups", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id }) });
+      const response = await authenticatedFetch("/api/groups", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id }) });
       const json = await response.json();
       if (!response.ok) return onError(json.error || copy.operationFailed);
       onDeleted();
@@ -478,7 +501,7 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
 
   async function loadContents() {
     if (contents) return contents;
-    const response = await fetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id }), cache: "no-store" });
+    const response = await authenticatedFetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id }), cache: "no-store" });
     const json = await response.json();
     if (!response.ok) throw new Error(json.error || copy.contentUnavailable);
     setContents(json.data);
@@ -522,7 +545,7 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
   async function downloadKeyPair() {
     setContentAction("download-zip");
     try {
-      const response = await fetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id, format: "zip" }), cache: "no-store" });
+      const response = await authenticatedFetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id, format: "zip" }), cache: "no-store" });
       if (!response.ok) {
         const json = await response.json();
         throw new Error(json.error || copy.contentUnavailable);

@@ -18,7 +18,7 @@ services:
       start_period: 10s
 
   certops:
-    image: docker.io/easitwch/cert-ops:0.0.1
+    image: docker.io/easitwch/cert-ops:0.0.2
     restart: unless-stopped
     depends_on:
       postgres:
@@ -27,6 +27,9 @@ services:
       DATABASE_URL: "postgresql://certops:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/certops"
       CERT_ENCRYPTION_KEY: "${CERT_ENCRYPTION_KEY:?Set CERT_ENCRYPTION_KEY in .env}"
       CRON_SECRET: "${CRON_SECRET:?Set CRON_SECRET in .env}"
+      CERTOPS_ADMIN_USERNAME: "${CERTOPS_ADMIN_USERNAME:?Set CERTOPS_ADMIN_USERNAME in .env}"
+      CERTOPS_ADMIN_PASSWORD: "${CERTOPS_ADMIN_PASSWORD:?Set CERTOPS_ADMIN_PASSWORD in .env}"
+      CERTOPS_SESSION_SECRET: "${CERTOPS_SESSION_SECRET:?Set CERTOPS_SESSION_SECRET in .env}"
     ports:
       - "${CERTOPS_PORT:-3000}:3000"
     healthcheck:

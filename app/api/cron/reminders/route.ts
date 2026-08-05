@@ -4,7 +4,10 @@ import { sendNotifications } from "@/lib/notifier";
 
 export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!secret) {
+    return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 503 });
+  }
+  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const settings = await getNotificationSettings();

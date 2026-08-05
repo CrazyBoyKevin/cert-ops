@@ -10,7 +10,7 @@ export type Language = (typeof LANGUAGES)[number]["code"];
 
 const zhCN = {
   certManagement: "证书管理", projectGroups: "项目分组", allCertificates: "全部证书", newGroup: "新建分组",
-  systemSettings: "系统设置", administrator: "管理员", localWorkspace: "本地工作区", workspace: "工作台",
+  systemSettings: "系统设置", administrator: "管理员", localWorkspace: "本地工作区", logout: "退出登录", workspace: "工作台",
   refresh: "刷新", uploadCertificate: "上传证书", demoMode: "演示模式",
   demoNote: "PostgreSQL 暂未连接，当前数据用于界面验收；数据库启动后将自动切换为持久化存储。",
   certTotal: "证书总数", healthy: "状态正常", expiring30: "30 天内到期", expired: "已经过期",
@@ -53,7 +53,7 @@ export type Messages = Copy;
 const zhTW: Copy = {
   ...zhCN,
   certManagement: "憑證管理", projectGroups: "專案分組", allCertificates: "全部憑證", newGroup: "新增分組",
-  systemSettings: "系統設定", administrator: "管理員", localWorkspace: "本機工作區", workspace: "工作台",
+  systemSettings: "系統設定", administrator: "管理員", localWorkspace: "本機工作區", logout: "登出", workspace: "工作台",
   refresh: "重新整理", uploadCertificate: "上傳憑證", demoMode: "展示模式",
   demoNote: "PostgreSQL 尚未連線，目前資料用於介面驗收；資料庫啟動後將自動切換為持久化儲存。",
   certTotal: "憑證總數", healthy: "狀態正常", expiring30: "30 天內到期", expired: "已經過期", projectsUnit: "個專案分組",
@@ -89,7 +89,7 @@ const zhTW: Copy = {
 
 const en: Copy = {
   certManagement: "Certificates", projectGroups: "Project groups", allCertificates: "All certificates", newGroup: "New group",
-  systemSettings: "System settings", administrator: "Administrator", localWorkspace: "Local workspace", workspace: "Workspace", refresh: "Refresh",
+  systemSettings: "System settings", administrator: "Administrator", localWorkspace: "Local workspace", logout: "Sign out", workspace: "Workspace", refresh: "Refresh",
   uploadCertificate: "Upload certificate", demoMode: "Demo mode", demoNote: "PostgreSQL is not connected. Demo data is shown until persistent storage becomes available.",
   certTotal: "Total certificates", healthy: "Healthy", expiring30: "Expiring in 30 days", expired: "Expired", projectsUnit: "project groups",
   healthRate: "Health rate", noCertificates: "No certificates", renewSoon: "Renewal recommended", noRisk: "No expiry risk", actNow: "Immediate action required",
@@ -127,7 +127,7 @@ const en: Copy = {
 const ja: Copy = {
   ...en,
   certManagement: "証明書管理", projectGroups: "プロジェクトグループ", allCertificates: "すべての証明書", newGroup: "グループ作成",
-  systemSettings: "システム設定", administrator: "管理者", localWorkspace: "ローカルワークスペース", workspace: "ワークスペース", refresh: "更新",
+  systemSettings: "システム設定", administrator: "管理者", localWorkspace: "ローカルワークスペース", logout: "ログアウト", workspace: "ワークスペース", refresh: "更新",
   uploadCertificate: "証明書をアップロード", certTotal: "証明書数", healthy: "正常", expiring30: "30日以内に期限切れ", expired: "期限切れ",
   projectsUnit: "プロジェクトグループ", healthRate: "正常率", noCertificates: "証明書なし", renewSoon: "更新を推奨", noRisk: "期限切れリスクなし",
   actNow: "至急対応が必要", noExpired: "期限切れ証明書なし", overviewLabel: "証明書概要", listSubtitle: "証明書の状態、プロジェクト、有効期限を確認",
@@ -155,7 +155,7 @@ const ja: Copy = {
 const ko: Copy = {
   ...en,
   certManagement: "인증서 관리", projectGroups: "프로젝트 그룹", allCertificates: "모든 인증서", newGroup: "그룹 만들기",
-  systemSettings: "시스템 설정", administrator: "관리자", localWorkspace: "로컬 작업공간", workspace: "작업공간", refresh: "새로고침",
+  systemSettings: "시스템 설정", administrator: "관리자", localWorkspace: "로컬 작업공간", logout: "로그아웃", workspace: "작업공간", refresh: "새로고침",
   uploadCertificate: "인증서 업로드", certTotal: "전체 인증서", healthy: "정상", expiring30: "30일 이내 만료", expired: "만료됨",
   projectsUnit: "프로젝트 그룹", healthRate: "정상 비율", noCertificates: "인증서 없음", renewSoon: "갱신 권장", noRisk: "만료 위험 없음",
   actNow: "즉시 조치 필요", noExpired: "만료된 인증서 없음", overviewLabel: "인증서 개요", listSubtitle: "인증서 상태, 프로젝트 및 유효기간 확인",

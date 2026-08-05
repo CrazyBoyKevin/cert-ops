@@ -10,6 +10,8 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 - 复制公钥、私钥，或分别下载公钥和私钥
 - 将公钥和私钥打包为 ZIP 导出
 - 创建、重命名和删除证书分组；包含证书的分组不能删除
+- 单管理员登录，无在线注册；账号由容器环境变量配置
+- HttpOnly 签名会话和主动退出登录
 - 使用 AES-256-GCM 加密保存私钥和通知凭证
 - 在证书到期前 15、7、3、1 天发送钉钉、飞书或邮件通知
 
@@ -18,10 +20,10 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 推荐直接使用发布到 Docker Hub 的固定版本镜像：
 
 ```text
-docker.io/easitwch/cert-ops:0.0.1
+docker.io/easitwch/cert-ops:0.0.2
 ```
 
-`0.0.1` 是多架构镜像，同时支持：
+`0.0.2` 是多架构镜像，同时支持：
 
 - `linux/amd64`：Intel/AMD 服务器、普通 x86_64 Linux 主机
 - `linux/arm64`：Apple Silicon、ARM64 Linux 主机
@@ -30,12 +32,15 @@ Docker 会根据运行机器自动拉取正确的架构，无需手动指定 `--
 
 ### 1. 准备环境变量
 
-在项目目录创建 `.env`，并替换以下三个必填值：
+在项目目录创建 `.env`，并替换所有必填值：
 
 ```dotenv
 POSTGRES_PASSWORD=replace-with-a-strong-password
 CERT_ENCRYPTION_KEY=replace-with-at-least-32-random-characters
 CRON_SECRET=replace-with-a-random-cron-token
+CERTOPS_ADMIN_USERNAME=admin
+CERTOPS_ADMIN_PASSWORD=replace-with-a-strong-admin-password
+CERTOPS_SESSION_SECRET=replace-with-at-least-32-random-characters
 CERTOPS_PORT=3000
 ```
 
@@ -45,12 +50,19 @@ CERTOPS_PORT=3000
 openssl rand -hex 24
 openssl rand -hex 32
 openssl rand -hex 32
+openssl rand -hex 24
+openssl rand -hex 32
 ```
 
 - `POSTGRES_PASSWORD`：PostgreSQL 用户密码。建议使用字母和数字，避免连接 URL 中的特殊字符编码问题。
 - `CERT_ENCRYPTION_KEY`：用于加密私钥和通知凭证。部署后不要更换，否则已有密文将无法解密。
 - `CRON_SECRET`：用于保护证书到期检查接口。
+- `CERTOPS_ADMIN_USERNAME`：唯一管理员用户名，不会保存在数据库中。
+- `CERTOPS_ADMIN_PASSWORD`：唯一管理员密码，至少 12 个字符。
+- `CERTOPS_SESSION_SECRET`：登录会话签名密钥，至少 32 个字符；修改用户名、密码或该密钥会使已有会话失效。
 - `CERTOPS_PORT`：宿主机访问端口，默认是 `3000`。
+
+系统不提供注册功能。部署完成后，使用上述管理员账号在 `/login` 登录；可以从左下角用户区域退出登录。
 
 ### 2. 启动服务
 
@@ -71,7 +83,7 @@ http://localhost:3000
 
 Compose 会启动：
 
-- `certops`：`docker.io/easitwch/cert-ops:0.0.1` Web 服务
+- `certops`：`docker.io/easitwch/cert-ops:0.0.2` Web 服务
 - `postgres`：PostgreSQL 16，数据保存在 `certops_postgres_data` Volume 中
 
 应用首次访问数据库时会自动创建 `cert_ops` schema、数据表和索引，无需手动导入 SQL。
@@ -114,7 +126,10 @@ docker run -d \
   -e DATABASE_URL='postgresql://certops:password@db.example.com:5432/certops?sslmode=require' \
   -e CERT_ENCRYPTION_KEY='replace-with-at-least-32-random-characters' \
   -e CRON_SECRET='replace-with-a-random-cron-token' \
-  docker.io/easitwch/cert-ops:0.0.1
+  -e CERTOPS_ADMIN_USERNAME='admin' \
+  -e CERTOPS_ADMIN_PASSWORD='replace-with-a-strong-admin-password' \
+  -e CERTOPS_SESSION_SECRET='replace-with-at-least-32-random-characters' \
+  docker.io/easitwch/cert-ops:0.0.2
 ```
 
 数据库用户需要具备目标数据库的连接、创建 schema、建表和创建索引权限。密码含有 `@`、`:`、`/`、`#` 等字符时，必须先进行 URL 编码。
@@ -145,6 +160,9 @@ npm run dev
 DATABASE_URL=postgresql://certops:password@127.0.0.1:5432/certops
 CERT_ENCRYPTION_KEY=replace-with-at-least-32-random-characters
 CRON_SECRET=replace-with-a-random-cron-token
+CERTOPS_ADMIN_USERNAME=admin
+CERTOPS_ADMIN_PASSWORD=replace-with-a-strong-admin-password
+CERTOPS_SESSION_SECRET=replace-with-at-least-32-random-characters
 ```
 
 默认访问 `http://localhost:3000`。如果没有配置可用的 PostgreSQL，应用会进入演示模式。
@@ -164,4 +182,4 @@ npm run build
 - `lib/repository.ts`：PostgreSQL 数据访问
 - `lib/notifier.ts`：钉钉、飞书和邮件通知
 - `db/schema.sql`：数据库结构和索引
-- `compose.example.yml`：基于 Docker Hub 镜像的部署示例
+- `compose.example.yml`：基于 Docker Hub 多架构镜像的部署示例

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { getNotificationSettings } from "@/lib/repository";
 import { sendNotifications } from "@/lib/notifier";
 import type { Certificate } from "@/lib/types";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const settings = await getNotificationSettings();
   const mock: Certificate = {
     id: "test", name: "通知测试证书", primaryDomain: "test.certops.cn", domains: ["test.certops.cn"], issuer: "CertOps",

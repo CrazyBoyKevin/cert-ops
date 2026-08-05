@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { encryptSecret } from "@/lib/crypto-store";
 import { parseCertificate } from "@/lib/certificate";
 import { createCertificate, deleteCertificate, listCertificates, updateCertificate } from "@/lib/repository";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const result = await listCertificates();
   return NextResponse.json(result);
 }
 
 export async function POST(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   try {
     const form = await request.formData();
     const certificateText = String(form.get("certificateText") || "").trim();
@@ -53,6 +58,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const { id, confirmed } = await request.json().catch(() => ({}));
   if (!id || confirmed !== true) return NextResponse.json({ error: "删除操作需要明确确认" }, { status: 400 });
   const deleted = await deleteCertificate(String(id));
@@ -60,6 +67,8 @@ export async function DELETE(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const unauthorized = requireApiSession(request);
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || "");
   const name = String(body.name || "").trim();
