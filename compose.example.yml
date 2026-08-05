@@ -1,3 +1,5 @@
+name: cert-ops
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: certops
       POSTGRES_USER: certops
-      POSTGRES_PASSWORD: change-this-database-password
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
       - certops_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -13,21 +15,27 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
   certops:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: docker.io/easitwch/cert-ops:0.0.1
+    platform: linux/arm64
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://certops:change-this-database-password@postgres:5432/certops
-      CERT_ENCRYPTION_KEY: change-this-to-a-random-string-of-at-least-32-characters
-      CRON_SECRET: change-this-to-another-random-string
+      DATABASE_URL: "postgresql://certops:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/certops"
+      CERT_ENCRYPTION_KEY: "${CERT_ENCRYPTION_KEY:?Set CERT_ENCRYPTION_KEY in .env}"
+      CRON_SECRET: "${CRON_SECRET:?Set CRON_SECRET in .env}"
     ports:
-      - "3000:3000"
+      - "${CERTOPS_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   certops_postgres_data:
