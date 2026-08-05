@@ -19,7 +19,6 @@ services:
 
   certops:
     image: docker.io/easitwch/cert-ops:0.0.1
-    platform: linux/arm64
     restart: unless-stopped
     depends_on:
       postgres:

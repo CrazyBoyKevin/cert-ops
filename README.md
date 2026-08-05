@@ -21,7 +21,12 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 docker.io/easitwch/cert-ops:0.0.1
 ```
 
-> 当前 `0.0.1` 镜像平台为 `linux/arm64`，适用于 Apple Silicon 和 ARM64 Linux。AMD64 服务器需要启用 ARM64 模拟，或重新构建 AMD64/多架构镜像。
+`0.0.1` 是多架构镜像，同时支持：
+
+- `linux/amd64`：Intel/AMD 服务器、普通 x86_64 Linux 主机
+- `linux/arm64`：Apple Silicon、ARM64 Linux 主机
+
+Docker 会根据运行机器自动拉取正确的架构，无需手动指定 `--platform`。
 
 ### 1. 准备环境变量
 
@@ -105,7 +110,6 @@ docker compose up -d certops
 docker run -d \
   --name certops \
   --restart unless-stopped \
-  --platform linux/arm64 \
   -p 3000:3000 \
   -e DATABASE_URL='postgresql://certops:password@db.example.com:5432/certops?sslmode=require' \
   -e CERT_ENCRYPTION_KEY='replace-with-at-least-32-random-characters' \
