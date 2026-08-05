@@ -186,7 +186,7 @@ export default function Home() {
             <span className="group-icon all"><Folder size={15} /></span><span>{copy.allCertificates}</span><b>{certificates.length}</b>
           </button>
           {groups.map((group) => (
-            <div key={group.id} className="group-entry">
+            <div key={group.id} className={`group-entry ${groupFilter === group.id ? "selected" : ""}`}>
               <button className={`group-item ${groupFilter === group.id ? "selected" : ""}`} onClick={() => setGroupFilter(group.id)}>
                 <span className="group-dot" style={{ background: group.color }} /><span>{group.name}</span><b>{group.count ?? certificates.filter((item) => item.groupId === group.id).length}</b>
               </button>
@@ -423,7 +423,25 @@ function EditGroupModal({ copy, group, onClose, onDelete, onUpdated, onError }: 
       setSaving(false);
     }
   }
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><Pencil size={19} /></span><h2>{copy.editGroupTitle}</h2><p>{copy.editGroupDesc}</p><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required /></label><div className="modal-actions group-edit-actions"><span className="group-delete-control"><button type="button" className="danger-text-button" disabled={certificateCount > 0} onClick={onDelete}><Trash2 size={15} />{copy.deleteGroup}</button>{certificateCount > 0 && <small>{copy.groupDeleteBlocked.replace("{count}", String(certificateCount))}</small>}</span><span><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim() || name.trim() === group.name}>{saving ? copy.creating : copy.saveChanges}</button></span></div></form></div>;
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <form className="modal small-modal edit-group-modal" onSubmit={submit}>
+        <button type="button" className="modal-close" onClick={onClose}><X size={19} /></button>
+        <span className="title-icon"><Pencil size={19} /></span>
+        <h2>{copy.editGroupTitle}</h2>
+        <p>{copy.editGroupDesc}</p>
+        <label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required /></label>
+        <div className={`group-danger-zone ${certificateCount > 0 ? "is-blocked" : ""}`}>
+          <div className="group-danger-message">
+            <span className="group-danger-icon"><Trash2 size={16} /></span>
+            <span><strong>{copy.deleteGroup}</strong><small>{certificateCount > 0 ? copy.groupDeleteBlocked.replace("{count}", String(certificateCount)) : copy.groupDeleteHint}</small></span>
+          </div>
+          <button type="button" className="group-delete-button" disabled={certificateCount > 0} onClick={onDelete}>{copy.deleteGroup}</button>
+        </div>
+        <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim() || name.trim() === group.name}>{saving ? copy.creating : copy.saveChanges}</button></div>
+      </form>
+    </div>
+  );
 }
 
 function DeleteGroupModal({ copy, group, onClose, onDeleted, onError }: { copy: Messages; group: Group; onClose: () => void; onDeleted: () => void; onError: (message: string) => void }) {

@@ -42,7 +42,7 @@ const zhCN = {
   domains: "绑定域名", fingerprint: "指纹 SHA-256", copied: "已复制到剪贴板", done: "完成", operationFailed: "操作失败，请稍后重试",
   edit: "编辑", editTitle: "编辑证书信息", editDesc: "修改证书名称和所属项目，不会影响证书内容。", saveChanges: "保存修改", updated: "证书信息已更新",
   renameGroup: "修改分组名称", editGroupTitle: "修改项目分组", editGroupDesc: "修改后，该分组下的所有证书会同步显示新名称。", groupUpdated: "分组名称已更新",
-  deleteGroup: "删除分组", deleteGroupTitle: "确认删除分组？", deleteGroupWarning: "分组删除后无法恢复。仅空分组可以删除。", confirmDeleteGroup: "确认删除分组", deleting: "删除中…", groupDeleted: "分组已删除", groupDeleteBlocked: "分组内有 {count} 个证书，无法删除",
+  deleteGroup: "删除分组", deleteGroupTitle: "确认删除分组？", deleteGroupWarning: "分组删除后无法恢复。仅空分组可以删除。", confirmDeleteGroup: "确认删除分组", deleting: "删除中…", groupDeleted: "分组已删除", groupDeleteHint: "删除此空分组，此操作无法撤销。", groupDeleteBlocked: "分组内有 {count} 个证书，无法删除",
   certificateFiles: "公钥与私钥", publicKeyContent: "公钥内容", copyContent: "复制内容", download: "下载", exportCertificate: "导出公私钥 ZIP",
   contentUnavailable: "该证书没有可用的证书或密钥内容", downloaded: "文件已导出", loadingContent: "正在读取…",
 };
@@ -82,7 +82,7 @@ const zhTW: Copy = {
   domains: "綁定網域", copied: "已複製到剪貼簿", done: "完成", operationFailed: "操作失敗，請稍後重試",
   edit: "編輯", editTitle: "編輯憑證資訊", editDesc: "修改憑證名稱和所屬專案，不會影響憑證內容。", saveChanges: "儲存修改", updated: "憑證資訊已更新",
   renameGroup: "修改分組名稱", editGroupTitle: "修改專案分組", editGroupDesc: "修改後，此分組下的所有憑證會同步顯示新名稱。", groupUpdated: "分組名稱已更新",
-  deleteGroup: "刪除分組", deleteGroupTitle: "確認刪除分組？", deleteGroupWarning: "分組刪除後無法復原。僅空分組可以刪除。", confirmDeleteGroup: "確認刪除分組", deleting: "刪除中…", groupDeleted: "分組已刪除", groupDeleteBlocked: "分組內有 {count} 個憑證，無法刪除",
+  deleteGroup: "刪除分組", deleteGroupTitle: "確認刪除分組？", deleteGroupWarning: "分組刪除後無法復原。僅空分組可以刪除。", confirmDeleteGroup: "確認刪除分組", deleting: "刪除中…", groupDeleted: "分組已刪除", groupDeleteHint: "刪除此空分組，此操作無法復原。", groupDeleteBlocked: "分組內有 {count} 個憑證，無法刪除",
   certificateFiles: "公鑰與私鑰", publicKeyContent: "公鑰內容", copyContent: "複製內容", download: "下載", exportCertificate: "匯出公私鑰 ZIP",
   contentUnavailable: "此憑證沒有可用的憑證或密鑰內容", downloaded: "檔案已匯出", loadingContent: "正在讀取…",
 };
@@ -119,7 +119,7 @@ const en: Copy = {
   domains: "Domains", fingerprint: "SHA-256 fingerprint", copied: "Copied to clipboard", done: "Done", operationFailed: "Operation failed. Please try again.",
   edit: "Edit", editTitle: "Edit certificate", editDesc: "Change the certificate name and project group without modifying its contents.", saveChanges: "Save changes", updated: "Certificate updated",
   renameGroup: "Rename group", editGroupTitle: "Rename project group", editGroupDesc: "All certificates in this group will show the new name.", groupUpdated: "Group name updated",
-  deleteGroup: "Delete group", deleteGroupTitle: "Delete project group?", deleteGroupWarning: "This cannot be undone. Only empty groups can be deleted.", confirmDeleteGroup: "Delete group", deleting: "Deleting…", groupDeleted: "Group deleted", groupDeleteBlocked: "This group contains {count} certificates and cannot be deleted",
+  deleteGroup: "Delete group", deleteGroupTitle: "Delete project group?", deleteGroupWarning: "This cannot be undone. Only empty groups can be deleted.", confirmDeleteGroup: "Delete group", deleting: "Deleting…", groupDeleted: "Group deleted", groupDeleteHint: "Delete this empty group. This action cannot be undone.", groupDeleteBlocked: "This group contains {count} certificates and cannot be deleted",
   certificateFiles: "Public and private keys", publicKeyContent: "Public key content", copyContent: "Copy content", download: "Download", exportCertificate: "Export keys ZIP",
   contentUnavailable: "No certificate or key content is available", downloaded: "File exported", loadingContent: "Loading…",
 };
