@@ -1,0 +1,568 @@
+"use client";
+
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Database, Download, FileKey2,
+  Folder, FolderPlus, Languages, LockKeyhole, Mail, MessageSquare, MoreHorizontal, Pencil, Plus,
+  RefreshCw, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Trash2, UploadCloud,
+  WifiOff, X,
+} from "lucide-react";
+import { LANGUAGES, messages, type Language, type Messages } from "@/lib/i18n";
+import type { Certificate, Group, NotificationSettings, StorageMode } from "@/lib/types";
+
+const EMPTY_SETTINGS: NotificationSettings = {
+  dingtalkEnabled: false, dingtalkWebhook: "", dingtalkSecret: "", feishuEnabled: false, feishuWebhook: "", feishuSecret: "",
+  emailEnabled: false, smtpHost: "", smtpPort: 465, smtpSecure: true, smtpUser: "",
+  smtpPassword: "", emailFrom: "", emailRecipients: "",
+};
+
+function daysUntil(date: string) {
+  return Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000);
+}
+
+function statusOf(certificate: Certificate) {
+  const days = daysUntil(certificate.expiresAt);
+  if (days < 0) return { key: "expired", tone: "red", days };
+  if (days <= 15) return { key: "urgent", tone: "red", days };
+  if (days <= 30) return { key: "warning", tone: "amber", days };
+  return { key: "healthy", tone: "green", days };
+}
+
+function statusLabel(certificate: Certificate, copy: Messages) {
+  const status = statusOf(certificate);
+  if (status.key === "expired") return copy.expiredLabel;
+  if (status.key === "healthy") return copy.normalLabel;
+  return `${status.days} ${copy.daysLater}`;
+}
+
+function formatDate(date: string, language: Language) {
+  const locale = language === "en" ? "en-US" : language;
+  return new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(date));
+}
+
+export default function Home() {
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [storage, setStorage] = useState<StorageMode>("demo");
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<Certificate | null>(null);
+  const [editTarget, setEditTarget] = useState<Certificate | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Certificate | null>(null);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupEditTarget, setGroupEditTarget] = useState<Group | null>(null);
+  const [groupDeleteTarget, setGroupDeleteTarget] = useState<Group | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [settings, setSettings] = useState<NotificationSettings>(EMPTY_SETTINGS);
+  const [language, setLanguage] = useState<Language>("zh-CN");
+  const copy = messages[language];
+
+  async function loadData(showLoading = false) {
+    if (showLoading) setLoading(true);
+    try {
+      const [certResponse, groupResponse, settingsResponse] = await Promise.all([
+        fetch("/api/certificates", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/settings", { cache: "no-store" }),
+      ]);
+      const [certJson, groupJson, settingsJson] = await Promise.all([certResponse.json(), groupResponse.json(), settingsResponse.json()]);
+      setCertificates(certJson.data || []);
+      setGroups(groupJson.data || []);
+      setStorage(certJson.storage || groupJson.storage || "demo");
+      setSettings({ ...EMPTY_SETTINGS, ...(settingsJson.data || {}) });
+    } catch {
+      showToast("error", copy.operationFailed);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    const storedLanguage = window.localStorage.getItem("certops-language");
+    if (LANGUAGES.some((item) => item.code === storedLanguage)) {
+      const savedLanguage = storedLanguage as Language;
+      window.setTimeout(() => {
+        if (active) {
+          setLanguage(savedLanguage);
+          document.documentElement.lang = savedLanguage;
+        }
+      }, 0);
+    }
+    Promise.all([
+      fetch("/api/certificates", { cache: "no-store" }),
+      fetch("/api/groups", { cache: "no-store" }),
+      fetch("/api/settings", { cache: "no-store" }),
+    ])
+      .then(async ([certResponse, groupResponse, settingsResponse]) => Promise.all([
+        certResponse.json(), groupResponse.json(), settingsResponse.json(),
+      ]))
+      .then(([certJson, groupJson, settingsJson]) => {
+        if (!active) return;
+        setCertificates(certJson.data || []);
+        setGroups(groupJson.data || []);
+        setStorage(certJson.storage || groupJson.storage || "demo");
+        setSettings({ ...EMPTY_SETTINGS, ...(settingsJson.data || {}) });
+      })
+      .catch(() => {
+        if (active) setToast({ type: "error", text: messages["zh-CN"].operationFailed });
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  function showToast(type: "success" | "error", text: string) {
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 3200);
+  }
+
+  function changeLanguage(next: Language) {
+    setLanguage(next);
+    window.localStorage.setItem("certops-language", next);
+    document.documentElement.lang = next;
+    showToast("success", messages[next].languageChanged);
+  }
+
+  const filtered = useMemo(() => certificates.filter((certificate) => {
+    const query = search.toLowerCase().trim();
+    const matchesSearch = !query || certificate.primaryDomain.toLowerCase().includes(query) || certificate.name.toLowerCase().includes(query) || certificate.issuer.toLowerCase().includes(query);
+    const matchesGroup = groupFilter === "all" || certificate.groupId === groupFilter;
+    const status = statusOf(certificate);
+    const matchesStatus = statusFilter === "all" || (statusFilter === "expiring" && status.days >= 0 && status.days <= 30) || status.key === statusFilter;
+    return matchesSearch && matchesGroup && matchesStatus;
+  }), [certificates, groupFilter, search, statusFilter]);
+
+  const metrics = useMemo(() => ({
+    total: certificates.length,
+    healthy: certificates.filter((certificate) => statusOf(certificate).key === "healthy").length,
+    expiring: certificates.filter((certificate) => { const days = daysUntil(certificate.expiresAt); return days >= 0 && days <= 30; }).length,
+    expired: certificates.filter((certificate) => daysUntil(certificate.expiresAt) < 0).length,
+  }), [certificates]);
+
+  async function handleDelete() {
+    if (!deleteTarget || !deleteConfirmed) return;
+    const response = await fetch("/api/certificates", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleteTarget.id, confirmed: true }) });
+    const json = await response.json();
+    if (!response.ok) return showToast("error", json.error || copy.operationFailed);
+    setCertificates((items) => items.filter((item) => item.id !== deleteTarget.id));
+    setDeleteTarget(null);
+    setDeleteConfirmed(false);
+    showToast("success", copy.deleted);
+    void loadData();
+  }
+
+  async function persistSettings(silent = false) {
+    const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+    const json = await response.json();
+    if (!response.ok) { showToast("error", json.error || copy.operationFailed); return false; }
+    setSettings(json.data);
+    if (!silent) showToast("success", copy.settingsSaved);
+    return true;
+  }
+
+  async function testNotification() {
+    if (!(await persistSettings(true))) return;
+    const response = await fetch("/api/notifications/test", { method: "POST" });
+    const json = await response.json();
+    if (!response.ok || !json.success) {
+      const details = Array.isArray(json.results) ? json.results.filter((item: { success: boolean }) => !item.success).map((item: { detail: string }) => item.detail).join("；") : "";
+      return showToast("error", details || json.error || copy.operationFailed);
+    }
+    showToast("success", copy.testSent);
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand"><span className="brand-mark"><ShieldCheck size={20} /></span><span>CertOps</span></div>
+        <div className="sidebar-section groups-primary">
+          <div className="section-label"><span>{copy.projectGroups}</span><button aria-label={copy.newGroup} onClick={() => setGroupOpen(true)}><Plus size={15} /></button></div>
+          <button className={`group-item ${groupFilter === "all" ? "selected" : ""}`} onClick={() => setGroupFilter("all")}>
+            <span className="group-icon all"><Folder size={15} /></span><span>{copy.allCertificates}</span><b>{certificates.length}</b>
+          </button>
+          {groups.map((group) => (
+            <div key={group.id} className="group-entry">
+              <button className={`group-item ${groupFilter === group.id ? "selected" : ""}`} onClick={() => setGroupFilter(group.id)}>
+                <span className="group-dot" style={{ background: group.color }} /><span>{group.name}</span><b>{group.count ?? certificates.filter((item) => item.groupId === group.id).length}</b>
+              </button>
+              <button className="group-rename" aria-label={`${copy.renameGroup} ${group.name}`} onClick={() => setGroupEditTarget(group)}><Pencil size={13} /></button>
+            </div>
+          ))}
+        </div>
+        <div className="sidebar-bottom">
+          <button className="nav-item" onClick={() => setSettingsOpen(true)}><Settings size={18} /><span>{copy.systemSettings}</span></button>
+          <div className="user-card"><span className="avatar">K</span><span><strong>{copy.administrator}</strong><small>{copy.localWorkspace}</small></span><MoreHorizontal size={17} /></div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div><div className="breadcrumb"><span>{copy.workspace}</span><ChevronRight size={13} /><b>{copy.certManagement}</b></div><h1>{copy.certManagement}</h1></div>
+          <div className="top-actions">
+            <button className="icon-button" aria-label={copy.refresh} onClick={() => void loadData(true)}><RefreshCw size={17} className={loading ? "spinning" : ""} /></button>
+            <button className="primary-button" onClick={() => setUploadOpen(true)}><Plus size={17} />{copy.uploadCertificate}</button>
+          </div>
+        </header>
+
+        <div className="content-wrap">
+          {storage === "demo" && (
+            <div className="demo-banner"><WifiOff size={16} /><span><strong>{copy.demoMode}</strong> · {copy.demoNote}</span></div>
+          )}
+
+          <section className="metric-grid" aria-label={copy.overviewLabel}>
+            <MetricCard label={copy.certTotal} value={metrics.total} note={`${groups.length} ${copy.projectsUnit}`} icon={<FileKey2 size={20} />} tone="indigo" />
+            <MetricCard label={copy.healthy} value={metrics.healthy} note={metrics.total ? `${copy.healthRate} ${Math.round(metrics.healthy / metrics.total * 100)}%` : copy.noCertificates} icon={<CheckCircle2 size={20} />} tone="green" />
+            <MetricCard label={copy.expiring30} value={metrics.expiring} note={metrics.expiring ? copy.renewSoon : copy.noRisk} icon={<AlertTriangle size={20} />} tone="amber" />
+            <MetricCard label={copy.expired} value={metrics.expired} note={metrics.expired ? copy.actNow : copy.noExpired} icon={<LockKeyhole size={20} />} tone="red" />
+          </section>
+
+          <section className="panel certificate-panel">
+            <div className="panel-heading">
+              <div><h2>{groupFilter === "all" ? copy.allCertificates : groups.find((group) => group.id === groupFilter)?.name}</h2><p>{copy.listSubtitle}</p></div>
+              <span className={`storage-pill ${storage}`}><Database size={13} />{storage === "postgresql" ? copy.pgConnected : copy.demoData}</span>
+            </div>
+            <div className="toolbar">
+              <label className="search-box"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.searchPlaceholder} /></label>
+              <div className="toolbar-actions">
+                <label className="select-box"><SlidersHorizontal size={15} /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">{copy.allStatus}</option><option value="healthy">{copy.normalStatus}</option><option value="expiring">{copy.expiring30}</option><option value="expired">{copy.expired}</option></select></label>
+                <span className="result-count">{copy.itemsPrefix} {filtered.length} {copy.itemsSuffix}</span>
+              </div>
+            </div>
+
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>{copy.certDomain}</th><th>{copy.project}</th><th>{copy.issuer}</th><th>{copy.expiryTime}</th><th>{copy.status}</th><th aria-label="actions" /></tr></thead>
+                <tbody>
+                  {filtered.map((certificate) => {
+                    const status = statusOf(certificate);
+                    return (
+                      <tr key={certificate.id} onClick={() => setDetailTarget(certificate)}>
+                        <td><div className="domain-cell"><span className="cert-icon"><ShieldCheck size={18} /></span><span><strong>{certificate.primaryDomain}</strong><small>{certificate.name} · {certificate.algorithm}</small></span></div></td>
+                        <td><span className="project-tag"><i style={{ background: certificate.groupColor }} />{certificate.groupName}</span></td>
+                        <td><span className="issuer">{certificate.issuer}</span></td>
+                        <td><span className="date-cell"><strong>{formatDate(certificate.expiresAt, language)}</strong><small>{copy.issuedOn} {formatDate(certificate.validFrom, language)}</small></span></td>
+                        <td><span className={`status-badge ${status.tone}`}><i />{statusLabel(certificate, copy)}</span></td>
+                        <td><div className="row-actions"><button className="row-menu edit" aria-label={`${copy.edit} ${certificate.primaryDomain}`} onClick={(event) => { event.stopPropagation(); setEditTarget(certificate); }}><Pencil size={15} /></button><button className="row-menu" aria-label={`${copy.delete} ${certificate.primaryDomain}`} onClick={(event) => { event.stopPropagation(); setDeleteTarget(certificate); setDeleteConfirmed(false); }}><Trash2 size={16} /></button></div></td>
+                      </tr>
+                    );
+                  })}
+                  {!loading && !filtered.length && <tr><td colSpan={6}><div className="empty-state"><ShieldCheck size={34} /><h3>{copy.noResults}</h3><p>{copy.noResultsHint}</p><button className="primary-button" onClick={() => setUploadOpen(true)}><Plus size={16} />{copy.uploadCertificate}</button></div></td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      {uploadOpen && <UploadModal copy={copy} groups={groups} onClose={() => setUploadOpen(false)} onSuccess={(message) => { setUploadOpen(false); showToast("success", message); void loadData(); }} onError={(message) => showToast("error", message)} />}
+      {editTarget && <EditCertificateModal copy={copy} certificate={editTarget} groups={groups} onClose={() => setEditTarget(null)} onUpdated={(certificate) => { setEditTarget(null); setCertificates((items) => items.map((item) => item.id === certificate.id ? certificate : item)); setDetailTarget((current) => current?.id === certificate.id ? certificate : current); showToast("success", copy.updated); void loadData(); }} onError={(message) => showToast("error", message)} />}
+      {settingsOpen && <SystemSettingsModal copy={copy} language={language} onLanguageChange={changeLanguage} settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}
+      {groupOpen && <GroupModal copy={copy} onClose={() => setGroupOpen(false)} onCreated={(group) => { setGroupOpen(false); setGroups((items) => [...items, group]); setGroupFilter(group.id); showToast("success", copy.groupCreated); }} onError={(message) => showToast("error", message)} />}
+      {groupEditTarget && <EditGroupModal copy={copy} group={groupEditTarget} onClose={() => setGroupEditTarget(null)} onDelete={() => { setGroupDeleteTarget(groupEditTarget); setGroupEditTarget(null); }} onUpdated={(group) => { setGroupEditTarget(null); setGroups((items) => items.map((item) => item.id === group.id ? { ...item, ...group } : item)); setCertificates((items) => items.map((item) => item.groupId === group.id ? { ...item, groupName: group.name } : item)); setDetailTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); setEditTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); showToast("success", copy.groupUpdated); }} onError={(message) => showToast("error", message)} />}
+      {groupDeleteTarget && <DeleteGroupModal copy={copy} group={groupDeleteTarget} onClose={() => setGroupDeleteTarget(null)} onDeleted={() => { const deletedId = groupDeleteTarget.id; setGroupDeleteTarget(null); setGroups((items) => items.filter((item) => item.id !== deletedId)); if (groupFilter === deletedId) setGroupFilter("all"); showToast("success", copy.groupDeleted); }} onError={(message) => showToast("error", message)} />}
+      {detailTarget && <DetailDrawer copy={copy} language={language} certificate={detailTarget} onClose={() => setDetailTarget(null)} onEdit={() => { setEditTarget(detailTarget); setDetailTarget(null); }} onDelete={() => { setDeleteTarget(detailTarget); setDeleteConfirmed(false); setDetailTarget(null); }} onToast={showToast} />}
+
+      {deleteTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDeleteTarget(null)}>
+          <div className="modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+            <button className="modal-close" onClick={() => setDeleteTarget(null)}><X size={19} /></button>
+            <span className="danger-icon"><Trash2 size={22} /></span><h2 id="delete-title">{copy.deleteTitle}</h2>
+            <p>{copy.deleteWarning}</p>
+            <div className="delete-cert"><ShieldCheck size={18} /><span><strong>{deleteTarget.primaryDomain}</strong><small>{deleteTarget.groupName} · {deleteTarget.issuer}</small></span></div>
+            <label className="confirm-check"><input type="checkbox" checked={deleteConfirmed} onChange={(event) => setDeleteConfirmed(event.target.checked)} /><span className="fake-check"><Check size={13} /></span><span>{copy.deleteConfirm}</span></label>
+            <div className="modal-actions"><button className="ghost-button" onClick={() => setDeleteTarget(null)}>{copy.cancel}</button><button className="danger-button" disabled={!deleteConfirmed} onClick={() => void handleDelete()}>{copy.confirmDelete}</button></div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className={`toast ${toast.type}`}>{toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}<span>{toast.text}</span></div>}
+    </div>
+  );
+}
+
+function MetricCard({ label, value, note, icon, tone }: { label: string; value: number; note: string; icon: React.ReactNode; tone: string }) {
+  return <div className="metric-card"><div><span>{label}</span><strong>{value}</strong><small>{note}</small></div><span className={`metric-icon ${tone}`}>{icon}</span></div>;
+}
+
+function UploadModal({ copy, groups, onClose, onSuccess, onError }: { copy: Messages; groups: Group[]; onClose: () => void; onSuccess: (message: string) => void; onError: (message: string) => void }) {
+  const [mode, setMode] = useState<"file" | "paste">("file");
+  const [certificateFile, setCertificateFile] = useState<File | null>(null);
+  const [privateKeyFile, setPrivateKeyFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSubmitting(true);
+    const form = new FormData(event.currentTarget);
+    if (certificateFile) form.set("certificateFile", certificateFile);
+    if (privateKeyFile) form.set("privateKeyFile", privateKeyFile);
+    try {
+      const response = await fetch("/api/certificates", { method: "POST", body: form });
+      const json = await response.json();
+      if (!response.ok) return onError(json.error || copy.operationFailed);
+      onSuccess(`${json.data.primaryDomain} ${copy.parsedSaved}`);
+    } catch { onError(copy.uploadingFailed); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <form className="modal upload-modal" onSubmit={submit}>
+        <button type="button" className="modal-close" onClick={onClose}><X size={19} /></button>
+        <div className="modal-title-row"><span className="title-icon"><UploadCloud size={20} /></span><div><h2>{copy.uploadTitle}</h2><p>{copy.uploadSubtitle}</p></div></div>
+        <div className="mode-tabs"><button type="button" className={mode === "file" ? "active" : ""} onClick={() => setMode("file")}>{copy.fileUpload}</button><button type="button" className={mode === "paste" ? "active" : ""} onClick={() => setMode("paste")}>{copy.pasteContent}</button></div>
+        <div className="form-grid two"><label><span>{copy.certName} <em>{copy.optional}</em></span><input name="name" placeholder={copy.certNamePlaceholder} /></label><label><span>{copy.project} <b>*</b></span><select name="groupId" required defaultValue={groups[0]?.id || ""}><option value="" disabled>{copy.selectGroup}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label></div>
+        {mode === "file" ? (
+          <div className="file-grid">
+            <FileDrop label={copy.certFile} hint={copy.certFileHint} file={certificateFile} accept=".pem,.crt,.cer" required clickReplace={copy.clickReplace} onChange={setCertificateFile} />
+            <FileDrop label={copy.keyFile} hint={copy.keyFileHint} file={privateKeyFile} accept=".key,.pem" clickReplace={copy.clickReplace} onChange={setPrivateKeyFile} />
+          </div>
+        ) : (
+          <div className="paste-grid"><label><span>{copy.certContent} <b>*</b></span><textarea name="certificateText" required placeholder={`-----BEGIN CERTIFICATE-----\n${copy.pasteCert}\n-----END CERTIFICATE-----`} /></label><label><span>{copy.keyContent} <em>{copy.optional}</em></span><textarea name="privateKeyText" placeholder={`-----BEGIN PRIVATE KEY-----\n${copy.pasteKey}\n-----END PRIVATE KEY-----`} /></label></div>
+        )}
+        <div className="security-note"><LockKeyhole size={16} /><span>{copy.securityNote}</span></div>
+        <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={submitting}>{submitting ? <><RefreshCw className="spinning" size={16} />{copy.parsing}</> : <><UploadCloud size={16} />{copy.parseUpload}</>}</button></div>
+      </form>
+    </div>
+  );
+}
+
+function FileDrop({ label, hint, file, accept, required, clickReplace, onChange }: { label: string; hint: string; file: File | null; accept: string; required?: boolean; clickReplace: string; onChange: (file: File | null) => void }) {
+  return <label className={`file-drop ${file ? "has-file" : ""}`}><input type="file" accept={accept} required={required && !file} onChange={(event) => onChange(event.target.files?.[0] || null)} /><span className="file-drop-icon">{file ? <CheckCircle2 size={22} /> : <FileKey2 size={22} />}</span><strong>{file ? file.name : label}</strong><small>{file ? `${(file.size / 1024).toFixed(1)} KB · ${clickReplace}` : hint}</small></label>;
+}
+
+function EditCertificateModal({ copy, certificate, groups, onClose, onUpdated, onError }: { copy: Messages; certificate: Certificate; groups: Group[]; onClose: () => void; onUpdated: (certificate: Certificate) => void; onError: (message: string) => void }) {
+  const [name, setName] = useState(certificate.name);
+  const [groupId, setGroupId] = useState(certificate.groupId);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/certificates", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: certificate.id, name, groupId }),
+      });
+      const json = await response.json();
+      if (!response.ok) return onError(json.error || copy.operationFailed);
+      onUpdated(json.data);
+    } catch {
+      onError(copy.operationFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal edit-cert-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><div className="modal-title-row"><span className="title-icon"><Pencil size={19} /></span><div><h2>{copy.editTitle}</h2><p>{copy.editDesc}</p></div></div><div className="edit-cert-domain"><ShieldCheck size={17} /><strong>{certificate.primaryDomain}</strong></div><label><span>{copy.certName} <b>*</b></span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={180} required /></label><label><span>{copy.project} <b>*</b></span><select value={groupId} onChange={(event) => setGroupId(event.target.value)} required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.saveChanges}</button></div></form></div>;
+}
+
+function SystemSettingsModal({ copy, language, onLanguageChange, settings, setSettings, onClose, onSave, onTest }: { copy: Messages; language: Language; onLanguageChange: (language: Language) => void; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onClose: () => void; onSave: () => void; onTest: () => void }) {
+  const [tab, setTab] = useState<"general" | "notifications">("general");
+  const update = <K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal settings-modal system-settings-modal"><button className="modal-close" onClick={onClose}><X size={19} /></button>
+        <div className="modal-title-row"><span className="title-icon"><Settings size={20} /></span><div><h2>{copy.settingsTitle}</h2><p>{copy.settingsSubtitle}</p></div></div>
+        <div className="settings-tabs">
+          <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}><Languages size={16} />{copy.generalSettings}</button>
+          <button className={tab === "notifications" ? "active" : ""} onClick={() => setTab("notifications")}><BellRing size={16} />{copy.notificationSettings}</button>
+        </div>
+        {tab === "general" ? (
+          <div className="settings-pane"><div className="settings-pane-heading"><h3>{copy.language}</h3><p>{copy.languageDesc}</p></div><div className="language-grid">{LANGUAGES.map((item) => <button key={item.code} className={language === item.code ? "active" : ""} onClick={() => onLanguageChange(item.code)}><span>{item.short}</span><strong>{item.label}</strong>{language === item.code && <Check size={16} />}</button>)}</div></div>
+        ) : (
+          <div className="settings-pane notification-pane">
+            <div className="settings-pane-heading"><h3>{copy.notificationTitle}</h3><p>{copy.reminderDesc}</p></div>
+            <div className="reminder-timeline"><span>{copy.early}</span>{[15, 7, 3, 1].map((day) => <b key={day}>{day}</b>)}<i /><span>{copy.expiryDay}</span></div>
+            <ChannelCard icon={<MessageSquare size={19} />} title={copy.dingtalk} description={copy.dingtalkDesc} enabled={settings.dingtalkEnabled} onToggle={(value) => update("dingtalkEnabled", value)}><label><span>{copy.webhook}</span><input type="password" value={settings.dingtalkWebhook} onChange={(event) => update("dingtalkWebhook", event.target.value)} placeholder="https://oapi.dingtalk.com/robot/send?..." /></label><label className="stacked-field"><span>{copy.signSecret} <em>{copy.signSecretHint}</em></span><input type="password" value={settings.dingtalkSecret} onChange={(event) => update("dingtalkSecret", event.target.value)} placeholder="SEC..." /></label></ChannelCard>
+            <ChannelCard icon={<Send size={18} />} title={copy.feishu} description={copy.feishuDesc} enabled={settings.feishuEnabled} onToggle={(value) => update("feishuEnabled", value)}><label><span>{copy.webhook}</span><input type="password" value={settings.feishuWebhook} onChange={(event) => update("feishuWebhook", event.target.value)} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." /></label><label className="stacked-field"><span>{copy.signSecret} <em>{copy.signSecretHint}</em></span><input type="password" value={settings.feishuSecret} onChange={(event) => update("feishuSecret", event.target.value)} /></label></ChannelCard>
+            <ChannelCard icon={<Mail size={19} />} title={copy.email} description={copy.emailDesc} enabled={settings.emailEnabled} onToggle={(value) => update("emailEnabled", value)}>
+              <div className="form-grid three"><label><span>{copy.smtpHost}</span><input value={settings.smtpHost} onChange={(event) => update("smtpHost", event.target.value)} placeholder="smtp.example.com" /></label><label><span>{copy.port}</span><input type="number" value={settings.smtpPort} onChange={(event) => update("smtpPort", Number(event.target.value))} /></label><label><span>{copy.sender}</span><input value={settings.emailFrom} onChange={(event) => update("emailFrom", event.target.value)} placeholder="ssl@example.com" /></label></div>
+              <div className="form-grid two"><label><span>{copy.smtpUser}</span><input value={settings.smtpUser} onChange={(event) => update("smtpUser", event.target.value)} /></label><label><span>{copy.smtpPassword}</span><input type="password" value={settings.smtpPassword} onChange={(event) => update("smtpPassword", event.target.value)} /></label></div>
+              <label><span>{copy.recipients} <em>{copy.recipientsHint}</em></span><input value={settings.emailRecipients} onChange={(event) => update("emailRecipients", event.target.value)} placeholder="ops@example.com, admin@example.com" /></label>
+            </ChannelCard>
+          </div>
+        )}
+        <div className="modal-actions spread">{tab === "notifications" ? <><button className="secondary-button" onClick={onTest}><Send size={16} />{copy.sendTest}</button><span><button className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" onClick={onSave}>{copy.saveSettings}</button></span></> : <><span /><button className="primary-button" onClick={onClose}>{copy.done}</button></>}</div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelCard({ icon, title, description, enabled, onToggle, children }: { icon: React.ReactNode; title: string; description: string; enabled: boolean; onToggle: (value: boolean) => void; children: React.ReactNode }) {
+  return <div className={`channel-card ${enabled ? "enabled" : ""}`}><div className="channel-head"><span className="channel-icon">{icon}</span><span><strong>{title}</strong><small>{description}</small></span><button className={`switch ${enabled ? "on" : ""}`} onClick={() => onToggle(!enabled)} aria-label={title}><i /></button></div>{enabled && <div className="channel-fields">{children}</div>}</div>;
+}
+
+function GroupModal({ copy, onClose, onCreated, onError }: { copy: Messages; onClose: () => void; onCreated: (group: Group) => void; onError: (message: string) => void }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); const response = await fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }); const json = await response.json(); setSaving(false); if (!response.ok) return onError(json.error || copy.operationFailed); onCreated(json.data); }
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><FolderPlus size={20} /></span><h2>{copy.groupTitle}</h2><p>{copy.groupDesc}</p><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required placeholder={copy.groupPlaceholder} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.createGroup}</button></div></form></div>;
+}
+
+function EditGroupModal({ copy, group, onClose, onDelete, onUpdated, onError }: { copy: Messages; group: Group; onClose: () => void; onDelete: () => void; onUpdated: (group: Group) => void; onError: (message: string) => void }) {
+  const [name, setName] = useState(group.name);
+  const [saving, setSaving] = useState(false);
+  const certificateCount = group.count ?? 0;
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/groups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id, name }) });
+      const json = await response.json();
+      if (!response.ok) return onError(json.error || copy.operationFailed);
+      onUpdated(json.data);
+    } catch {
+      onError(copy.operationFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><Pencil size={19} /></span><h2>{copy.editGroupTitle}</h2><p>{copy.editGroupDesc}</p><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required /></label><div className="modal-actions group-edit-actions"><span className="group-delete-control"><button type="button" className="danger-text-button" disabled={certificateCount > 0} onClick={onDelete}><Trash2 size={15} />{copy.deleteGroup}</button>{certificateCount > 0 && <small>{copy.groupDeleteBlocked.replace("{count}", String(certificateCount))}</small>}</span><span><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim() || name.trim() === group.name}>{saving ? copy.creating : copy.saveChanges}</button></span></div></form></div>;
+}
+
+function DeleteGroupModal({ copy, group, onClose, onDeleted, onError }: { copy: Messages; group: Group; onClose: () => void; onDeleted: () => void; onError: (message: string) => void }) {
+  const [deleting, setDeleting] = useState(false);
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/groups", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: group.id }) });
+      const json = await response.json();
+      if (!response.ok) return onError(json.error || copy.operationFailed);
+      onDeleted();
+    } catch {
+      onError(copy.operationFailed);
+    } finally {
+      setDeleting(false);
+    }
+  }
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-group-title"><button className="modal-close" onClick={onClose}><X size={19} /></button><span className="danger-icon"><Trash2 size={22} /></span><h2 id="delete-group-title">{copy.deleteGroupTitle}</h2><p>{copy.deleteGroupWarning}</p><div className="delete-cert"><Folder size={18} /><span><strong>{group.name}</strong><small>{copy.noCertificates}</small></span></div><div className="modal-actions"><button className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="danger-button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? copy.deleting : copy.confirmDeleteGroup}</button></div></div></div>;
+}
+
+function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, onToast }: { copy: Messages; language: Language; certificate: Certificate; onClose: () => void; onEdit: () => void; onDelete: () => void; onToast: (type: "success" | "error", text: string) => void }) {
+  const status = statusOf(certificate);
+  const [contents, setContents] = useState<{ publicKeyPem: string; privateKey: string } | null>(null);
+  const [contentAction, setContentAction] = useState<string | null>(null);
+
+  async function copyValue(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      onToast("success", copy.copied);
+    } catch {
+      onToast("error", copy.operationFailed);
+    }
+  }
+
+  async function loadContents() {
+    if (contents) return contents;
+    const response = await fetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id }), cache: "no-store" });
+    const json = await response.json();
+    if (!response.ok) throw new Error(json.error || copy.contentUnavailable);
+    setContents(json.data);
+    return json.data as { publicKeyPem: string; privateKey: string };
+  }
+
+  async function copyMaterial(key: "publicKeyPem" | "privateKey") {
+    setContentAction(`copy-${key}`);
+    try {
+      const data = await loadContents();
+      if (!data[key]) throw new Error(copy.contentUnavailable);
+      await copyValue(data[key]);
+    } catch (error) {
+      onToast("error", error instanceof Error ? error.message : copy.contentUnavailable);
+    } finally {
+      setContentAction(null);
+    }
+  }
+
+  async function downloadMaterial(key: "publicKeyPem" | "privateKey", suffix: string) {
+    setContentAction(`download-${key}`);
+    try {
+      const data = await loadContents();
+      if (!data[key]) throw new Error(copy.contentUnavailable);
+      const blob = new Blob([data[key]], { type: "application/x-pem-file;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const baseName = certificate.primaryDomain.replace(/^\*\./, "wildcard.").replace(/[^a-zA-Z0-9._-]/g, "-");
+      anchor.href = url;
+      anchor.download = `${baseName}${suffix}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      onToast("success", copy.downloaded);
+    } catch (error) {
+      onToast("error", error instanceof Error ? error.message : copy.contentUnavailable);
+    } finally {
+      setContentAction(null);
+    }
+  }
+
+  async function downloadKeyPair() {
+    setContentAction("download-zip");
+    try {
+      const response = await fetch("/api/certificates/contents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: certificate.id, format: "zip" }), cache: "no-store" });
+      if (!response.ok) {
+        const json = await response.json();
+        throw new Error(json.error || copy.contentUnavailable);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const baseName = certificate.primaryDomain.replace(/^\*\./, "wildcard.").replace(/[^a-zA-Z0-9._-]/g, "-");
+      anchor.href = url;
+      anchor.download = `${baseName}.keys.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      onToast("success", copy.downloaded);
+    } catch (error) {
+      onToast("error", error instanceof Error ? error.message : copy.contentUnavailable);
+    } finally {
+      setContentAction(null);
+    }
+  }
+
+  const materialRows: Array<{ key: "publicKeyPem" | "privateKey"; label: string; suffix: string; disabled?: boolean }> = [
+    { key: "publicKeyPem", label: copy.publicKeyContent, suffix: ".public-key.pem" },
+    { key: "privateKey", label: copy.keyContent, suffix: ".private-key.pem", disabled: !certificate.hasPrivateKey },
+  ];
+
+  return (
+    <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside className="detail-drawer">
+        <button className="modal-close" onClick={onClose}><X size={19} /></button>
+        <div className="drawer-hero"><span className="large-cert-icon"><ShieldCheck size={27} /></span><span className={`status-badge ${status.tone}`}><i />{statusLabel(certificate, copy)}</span><h2>{certificate.primaryDomain}</h2><p>{certificate.name}</p></div>
+        <div className="detail-section"><h3>{copy.certInfo}</h3><DetailRow label={copy.issuer} value={certificate.issuer} /><DetailRow label={copy.project} value={certificate.groupName || "—"} /><DetailRow label={copy.algorithm} value={certificate.algorithm} /><DetailRow label={copy.validFrom} value={formatDate(certificate.validFrom, language)} /><DetailRow label={copy.expiryDate} value={formatDate(certificate.expiresAt, language)} /><DetailRow label={copy.privateKeyStatus} value={certificate.hasPrivateKey ? copy.keyStored : copy.keyMissing} /></div>
+        <div className="detail-section"><h3>{copy.domains}</h3><div className="domain-list">{certificate.domains.map((domain) => <span key={domain}>{domain}<button onClick={() => void copyValue(domain)} aria-label={`${copy.copyContent} ${domain}`}><Copy size={13} /></button></span>)}</div></div>
+        <div className="detail-section"><h3>{copy.fingerprint}</h3><button className="fingerprint" onClick={() => void copyValue(certificate.fingerprint)}><code>{certificate.fingerprint}</code><Copy size={14} /></button></div>
+        <div className="detail-section certificate-material-section">
+          <h3>{copy.certificateFiles}</h3>
+          <div className="certificate-material-list">
+            {materialRows.map((item) => (
+              <div className={`certificate-material-item ${item.disabled ? "is-disabled" : ""}`} key={item.key}>
+                <div className="certificate-material-info">
+                  <span className="certificate-material-icon"><FileKey2 size={16} /></span>
+                  <span className="certificate-material-copy"><strong>{item.label}</strong>{item.disabled && <small>{copy.keyMissing}</small>}</span>
+                </div>
+                <div className="certificate-material-actions">
+                  <button className="certificate-material-action" disabled={item.disabled || contentAction !== null} onClick={() => void copyMaterial(item.key)} aria-label={`${copy.copyContent}：${item.label}`}>
+                    {contentAction === `copy-${item.key}` ? <RefreshCw className="spinning" size={13} /> : <Copy size={13} />}<span>{copy.copyContent}</span>
+                  </button>
+                  <button className="certificate-material-action" disabled={item.disabled || contentAction !== null} onClick={() => void downloadMaterial(item.key, item.suffix)} aria-label={`${copy.download}：${item.label}`}>
+                    {contentAction === `download-${item.key}` ? <RefreshCw className="spinning" size={13} /> : <Download size={13} />}<span>{copy.download}</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="drawer-actions"><button className="danger-text-button" onClick={onDelete}><Trash2 size={16} />{copy.delete}</button><span className="drawer-primary-actions"><button className="secondary-button" onClick={onEdit}><Pencil size={15} />{copy.edit}</button><button className="primary-button" onClick={() => void downloadKeyPair()} disabled={contentAction !== null || !certificate.hasPrivateKey}>{contentAction === "download-zip" ? <RefreshCw className="spinning" size={15} /> : <Download size={15} />}{copy.exportCertificate}</button></span></div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) { return <div className="detail-row"><span>{label}</span><strong>{value}</strong></div>; }
