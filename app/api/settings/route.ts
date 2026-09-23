@@ -6,20 +6,16 @@ import type { NotificationSettings } from "@/lib/types";
 const MASK = "••••••••";
 
 function publicSettings(settings: NotificationSettings) {
-  return {
-    ...settings,
-    dingtalkWebhook: settings.dingtalkWebhook ? MASK : "",
-    dingtalkSecret: settings.dingtalkSecret ? MASK : "",
-    feishuWebhook: settings.feishuWebhook ? MASK : "",
-    feishuSecret: settings.feishuSecret ? MASK : "",
-    smtpPassword: settings.smtpPassword ? MASK : "",
-  };
+  return { ...settings };
 }
 
 export async function GET(request: Request) {
   const unauthorized = requireApiSession(request);
   if (unauthorized) return unauthorized;
-  return NextResponse.json({ data: publicSettings(await getNotificationSettings()) });
+  return NextResponse.json(
+    { data: publicSettings(await getNotificationSettings()) },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }
 
 export async function PUT(request: Request) {
@@ -47,5 +43,8 @@ export async function PUT(request: Request) {
   if (settings.feishuEnabled && !settings.feishuWebhook) return NextResponse.json({ error: "请填写飞书机器人 Webhook" }, { status: 400 });
   if (settings.emailEnabled && (!settings.smtpHost || !settings.emailRecipients)) return NextResponse.json({ error: "请完善邮件服务器与收件人信息" }, { status: 400 });
   await saveNotificationSettings(settings);
-  return NextResponse.json({ data: publicSettings(settings) });
+  return NextResponse.json(
+    { data: publicSettings(settings) },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }

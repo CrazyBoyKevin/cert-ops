@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool, type PoolClient } from "pg";
-import { decryptSecret, encryptSecret } from "./crypto-store";
+import { decryptSecret, encryptSecret } from "./crypto-store.ts";
 import type { Certificate, Group, NotificationSettings, StorageMode } from "./types";
+import type { ReminderStore } from "./reminder-runner";
 
 const DEFAULT_SETTINGS: NotificationSettings = {
   dingtalkEnabled: false,
@@ -175,6 +176,22 @@ async function database<T>(work: (client: PoolClient) => Promise<T>): Promise<T 
     return null;
   } finally {
     client?.release();
+  }
+}
+
+// ACME must never fall back to demo storage: DNS changes need durable tracking.
+export async function withPostgres<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_REQUIRED");
+  const client = await pool().connect();
+  let discard = false;
+  try {
+    await ensureSchema(client);
+    return await work(client);
+  } catch (error) {
+    discard = true;
+    throw error;
+  } finally {
+    client.release(discard);
   }
 }
 
@@ -437,11 +454,46 @@ export async function saveNotificationSettings(settings: NotificationSettings) {
   return settings;
 }
 
-export async function dueCertificates() {
-  const { data } = await listCertificates();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return data
-    .map((certificate) => ({ certificate, days: Math.ceil((new Date(certificate.expiresAt).getTime() - today.getTime()) / 86_400_000) }))
-    .filter((item) => [15, 7, 3, 1].includes(item.days));
+// Reminder delivery must never fall back to demo data when PostgreSQL is unavailable.
+export async function withReminderStore<T>(work: (store: ReminderStore) => Promise<T>): Promise<T | null> {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for reminders");
+  const client = await pool().connect();
+  let locked = false;
+  let discard = false;
+  try {
+    // A session lock covers both automatic and manual checks across all replicas.
+    const lock = await client.query("SELECT pg_try_advisory_lock(194827, 1) AS locked");
+    locked = Boolean(lock.rows[0].locked);
+    if (!locked) return null;
+    await ensureSchema(client);
+    return await work({
+      async settings() {
+        const result = await client.query("SELECT config_encrypted FROM cert_ops.notification_settings WHERE id = 1");
+        return result.rows[0]
+          ? { ...DEFAULT_SETTINGS, ...JSON.parse(decryptSecret(result.rows[0].config_encrypted)) }
+          : structuredClone(DEFAULT_SETTINGS);
+      },
+      async certificates() {
+        const result = await client.query("SELECT * FROM cert_ops.certificates WHERE expires_at > NOW() AND expires_at <= NOW() + INTERVAL '15 days' ORDER BY expires_at");
+        return result.rows.map(mapCertificate);
+      },
+      async wasSent(id, days, channel) {
+        const result = await client.query("SELECT 1 FROM cert_ops.notification_logs WHERE certificate_id = $1 AND reminder_days = $2 AND channel = $3 AND success = TRUE LIMIT 1", [id, days, channel]);
+        return result.rows.length > 0;
+      },
+      async record(id, days, result) {
+        await client.query(`INSERT INTO cert_ops.notification_logs (id, certificate_id, reminder_days, channel, success, detail)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (certificate_id, reminder_days, channel, sent_on)
+          DO UPDATE SET success = EXCLUDED.success, detail = EXCLUDED.detail, created_at = NOW()`,
+        [randomUUID(), id, days, result.channel, result.success, result.success ? "已发送" : "发送失败，下一轮检查重试；请检查渠道配置及网络"]);
+      },
+    });
+  } finally {
+    if (locked) {
+      try { await client.query("SELECT pg_advisory_unlock(194827, 1)"); }
+      catch { discard = true; }
+    }
+    client.release(discard);
+  }
 }

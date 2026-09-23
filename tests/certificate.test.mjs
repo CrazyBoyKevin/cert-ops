@@ -7,6 +7,7 @@ import test from "node:test";
 import { parseCertificate } from "../lib/certificate.ts";
 import { decryptSecret, encryptSecret } from "../lib/crypto-store.ts";
 import { createZipArchive } from "../lib/zip.ts";
+import { certificateExportFiles, certificateExportNames } from "../lib/certificate-export.ts";
 
 test("encrypts sensitive values for storage", () => {
   const plaintext = "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----";
@@ -37,18 +38,29 @@ test("parses X.509 metadata and validates the private key", () => {
   }
 });
 
-test("creates a ZIP containing the public and private key files", () => {
+test("creates a ZIP containing exactly a PEM certificate chain and a KEY private key", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "certops-zip-test-"));
   const archivePath = path.join(directory, "keys.zip");
   try {
-    const archive = createZipArchive([
-      { name: "example.public-key.pem", data: "PUBLIC KEY CONTENT" },
-      { name: "example.private-key.pem", data: "PRIVATE KEY CONTENT" },
-    ]);
+    const certificatePem = "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nINTERMEDIATE\n-----END CERTIFICATE-----\n";
+    const privateKey = "-----BEGIN PRIVATE KEY-----\nPRIVATE KEY CONTENT\n-----END PRIVATE KEY-----\n";
+    const archive = createZipArchive(certificateExportFiles("example.com", { certificatePem, privateKey }));
     writeFileSync(archivePath, archive);
-    assert.equal(execFileSync("unzip", ["-p", archivePath, "example.public-key.pem"], { encoding: "utf8" }), "PUBLIC KEY CONTENT");
-    assert.equal(execFileSync("unzip", ["-p", archivePath, "example.private-key.pem"], { encoding: "utf8" }), "PRIVATE KEY CONTENT");
+    assert.deepEqual(execFileSync("unzip", ["-Z1", archivePath], { encoding: "utf8" }).trim().split("\n"), ["example.com.pem", "example.com.key"]);
+    assert.equal(execFileSync("unzip", ["-p", archivePath, "example.com.pem"], { encoding: "utf8" }), certificatePem);
+    assert.equal(execFileSync("unzip", ["-p", archivePath, "example.com.key"], { encoding: "utf8" }), privateKey);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("uses consistent safe filenames for individual and wildcard certificate exports", () => {
+  assert.deepEqual(certificateExportNames("*.example.com"), {
+    certificatePem: "wildcard.example.com.pem",
+    privateKey: "wildcard.example.com.key",
+    archive: "wildcard.example.com.keys.zip",
+  });
+  const names = certificateExportNames('example.com/\\\r\n"');
+  for (const name of Object.values(names)) assert.match(name, /^[a-zA-Z0-9._-]+$/);
+  assert.equal(certificateExportNames("").certificatePem, "certificate.pem");
 });

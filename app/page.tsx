@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Database, Download, FileKey2,
+  AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Database, Download, Eye, EyeOff, FileKey2,
   Folder, FolderPlus, Languages, LockKeyhole, LogOut, Mail, MessageSquare, Pencil, Plus,
   RefreshCw, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Trash2, UploadCloud,
   WifiOff, X,
 } from "lucide-react";
 import { LANGUAGES, messages, type Language, type Messages } from "@/lib/i18n";
 import type { Certificate, Group, NotificationSettings, StorageMode } from "@/lib/types";
+import { AcmeModal, AcmeSettingsPanel } from "./acme-panel";
+import { acmeMessages } from "@/lib/acme-i18n";
+import { certificateExportNames, type CertificateExportContents } from "@/lib/certificate-export";
 
 const EMPTY_SETTINGS: NotificationSettings = {
   dingtalkEnabled: false, dingtalkWebhook: "", dingtalkSecret: "", feishuEnabled: false, feishuWebhook: "", feishuSecret: "",
@@ -59,6 +62,8 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [acmeOpen, setAcmeOpen] = useState(false);
+  const [settingsInitialAcme, setSettingsInitialAcme] = useState(false);
   const [detailTarget, setDetailTarget] = useState<Certificate | null>(null);
   const [editTarget, setEditTarget] = useState<Certificate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Certificate | null>(null);
@@ -218,7 +223,7 @@ export default function Home() {
           ))}
         </div>
         <div className="sidebar-bottom">
-          <button className="nav-item" onClick={() => setSettingsOpen(true)}><Settings size={18} /><span>{copy.systemSettings}</span></button>
+          <button className="nav-item" onClick={() => { setSettingsInitialAcme(false); setSettingsOpen(true); }}><Settings size={18} /><span>{copy.systemSettings}</span></button>
           <div className="user-card"><span className="avatar">{(currentUsername[0] || "A").toUpperCase()}</span><span><strong>{currentUsername || copy.administrator}</strong><small>{copy.administrator}</small></span><button className="user-logout" aria-label={copy.logout} title={copy.logout} disabled={loggingOut} onClick={() => void handleLogout()}><LogOut size={16} /></button></div>
         </div>
       </aside>
@@ -229,6 +234,7 @@ export default function Home() {
           <div className="top-actions">
             <button className="icon-button" aria-label={copy.refresh} onClick={() => void loadData(true)}><RefreshCw size={17} className={loading ? "spinning" : ""} /></button>
             <button className="primary-button" onClick={() => setUploadOpen(true)}><Plus size={17} />{copy.uploadCertificate}</button>
+            <button className="secondary-button acme-launch" onClick={() => setAcmeOpen(true)}><FileKey2 size={17} />{acmeMessages(language).title}</button>
           </div>
         </header>
 
@@ -284,7 +290,8 @@ export default function Home() {
 
       {uploadOpen && <UploadModal copy={copy} groups={groups} onClose={() => setUploadOpen(false)} onSuccess={(message) => { setUploadOpen(false); showToast("success", message); void loadData(); }} onError={(message) => showToast("error", message)} />}
       {editTarget && <EditCertificateModal copy={copy} certificate={editTarget} groups={groups} onClose={() => setEditTarget(null)} onUpdated={(certificate) => { setEditTarget(null); setCertificates((items) => items.map((item) => item.id === certificate.id ? certificate : item)); setDetailTarget((current) => current?.id === certificate.id ? certificate : current); showToast("success", copy.updated); void loadData(); }} onError={(message) => showToast("error", message)} />}
-      {settingsOpen && <SystemSettingsModal copy={copy} language={language} onLanguageChange={changeLanguage} settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}
+      {acmeOpen && <AcmeModal language={language} groups={groups} initialGroup={groupFilter} onClose={() => { setAcmeOpen(false); void loadData(); }} onConfigure={() => { setAcmeOpen(false); setSettingsInitialAcme(true); setSettingsOpen(true); }} />}
+      {settingsOpen && <SystemSettingsModal initialAcme={settingsInitialAcme} copy={copy} language={language} onLanguageChange={changeLanguage} settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}
       {groupOpen && <GroupModal copy={copy} onClose={() => setGroupOpen(false)} onCreated={(group) => { setGroupOpen(false); setGroups((items) => [...items, group]); setGroupFilter(group.id); showToast("success", copy.groupCreated); }} onError={(message) => showToast("error", message)} />}
       {groupEditTarget && <EditGroupModal copy={copy} group={groupEditTarget} onClose={() => setGroupEditTarget(null)} onDelete={() => { setGroupDeleteTarget(groupEditTarget); setGroupEditTarget(null); }} onUpdated={(group) => { setGroupEditTarget(null); setGroups((items) => items.map((item) => item.id === group.id ? { ...item, ...group } : item)); setCertificates((items) => items.map((item) => item.groupId === group.id ? { ...item, groupName: group.name } : item)); setDetailTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); setEditTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); showToast("success", copy.groupUpdated); }} onError={(message) => showToast("error", message)} />}
       {groupDeleteTarget && <DeleteGroupModal copy={copy} group={groupDeleteTarget} onClose={() => setGroupDeleteTarget(null)} onDeleted={() => { const deletedId = groupDeleteTarget.id; setGroupDeleteTarget(null); setGroups((items) => items.filter((item) => item.id !== deletedId)); if (groupFilter === deletedId) setGroupFilter("all"); showToast("success", copy.groupDeleted); }} onError={(message) => showToast("error", message)} />}
@@ -385,33 +392,50 @@ function EditCertificateModal({ copy, certificate, groups, onClose, onUpdated, o
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal edit-cert-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><div className="modal-title-row"><span className="title-icon"><Pencil size={19} /></span><div><h2>{copy.editTitle}</h2><p>{copy.editDesc}</p></div></div><div className="edit-cert-domain"><ShieldCheck size={17} /><strong>{certificate.primaryDomain}</strong></div><label><span>{copy.certName} <b>*</b></span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={180} required /></label><label><span>{copy.project} <b>*</b></span><select value={groupId} onChange={(event) => setGroupId(event.target.value)} required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.saveChanges}</button></div></form></div>;
 }
 
-function SystemSettingsModal({ copy, language, onLanguageChange, settings, setSettings, onClose, onSave, onTest }: { copy: Messages; language: Language; onLanguageChange: (language: Language) => void; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onClose: () => void; onSave: () => void; onTest: () => void }) {
-  const [tab, setTab] = useState<"general" | "notifications">("general");
+function SystemSettingsModal({ initialAcme, copy, language, onLanguageChange, settings, setSettings, onClose, onSave, onTest }: { initialAcme: boolean; copy: Messages; language: Language; onLanguageChange: (language: Language) => void; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onClose: () => void; onSave: () => void; onTest: () => void }) {
+  const [tab, setTab] = useState<"general" | "notifications" | "acme">(initialAcme ? "acme" : "general");
   const update = <K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   return (
     <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal settings-modal system-settings-modal"><button className="modal-close" onClick={onClose}><X size={19} /></button>
         <div className="modal-title-row"><span className="title-icon"><Settings size={20} /></span><div><h2>{copy.settingsTitle}</h2><p>{copy.settingsSubtitle}</p></div></div>
-        <div className="settings-tabs">
+        <div className="settings-tabs with-acme">
           <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}><Languages size={16} />{copy.generalSettings}</button>
           <button className={tab === "notifications" ? "active" : ""} onClick={() => setTab("notifications")}><BellRing size={16} />{copy.notificationSettings}</button>
+          <button className={tab === "acme" ? "active" : ""} onClick={() => setTab("acme")}><FileKey2 size={16} />{acmeMessages(language).settings}</button>
         </div>
         {tab === "general" ? (
           <div className="settings-pane"><div className="settings-pane-heading"><h3>{copy.language}</h3><p>{copy.languageDesc}</p></div><div className="language-grid">{LANGUAGES.map((item) => <button key={item.code} className={language === item.code ? "active" : ""} onClick={() => onLanguageChange(item.code)}><span>{item.short}</span><strong>{item.label}</strong>{language === item.code && <Check size={16} />}</button>)}</div></div>
-        ) : (
+        ) : tab === "acme" ? <AcmeSettingsPanel language={language} /> : (
           <div className="settings-pane notification-pane">
             <div className="settings-pane-heading"><h3>{copy.notificationTitle}</h3><p>{copy.reminderDesc}</p></div>
             <div className="reminder-timeline"><span>{copy.early}</span>{[15, 7, 3, 1].map((day) => <b key={day}>{day}</b>)}<i /><span>{copy.expiryDay}</span></div>
-            <ChannelCard icon={<MessageSquare size={19} />} title={copy.dingtalk} description={copy.dingtalkDesc} enabled={settings.dingtalkEnabled} onToggle={(value) => update("dingtalkEnabled", value)}><label><span>{copy.webhook}</span><input type="password" value={settings.dingtalkWebhook} onChange={(event) => update("dingtalkWebhook", event.target.value)} placeholder="https://oapi.dingtalk.com/robot/send?..." /></label><label className="stacked-field"><span>{copy.signSecret} <em>{copy.signSecretHint}</em></span><input type="password" value={settings.dingtalkSecret} onChange={(event) => update("dingtalkSecret", event.target.value)} placeholder="SEC..." /></label></ChannelCard>
-            <ChannelCard icon={<Send size={18} />} title={copy.feishu} description={copy.feishuDesc} enabled={settings.feishuEnabled} onToggle={(value) => update("feishuEnabled", value)}><label><span>{copy.webhook}</span><input type="password" value={settings.feishuWebhook} onChange={(event) => update("feishuWebhook", event.target.value)} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." /></label><label className="stacked-field"><span>{copy.signSecret} <em>{copy.signSecretHint}</em></span><input type="password" value={settings.feishuSecret} onChange={(event) => update("feishuSecret", event.target.value)} /></label></ChannelCard>
+            <ChannelCard icon={<MessageSquare size={19} />} title={copy.dingtalk} description={copy.dingtalkDesc} enabled={settings.dingtalkEnabled} onToggle={(value) => update("dingtalkEnabled", value)}><label><span>{copy.webhook}</span><input value={settings.dingtalkWebhook} onChange={(event) => update("dingtalkWebhook", event.target.value)} placeholder="https://oapi.dingtalk.com/robot/send?..." spellCheck={false} /></label><SecretField id="dingtalk-secret" label={copy.signSecret} hint={copy.signSecretHint} value={settings.dingtalkSecret} onChange={(value) => update("dingtalkSecret", value)} placeholder="SEC..." showLabel={copy.showSecret} hideLabel={copy.hideSecret} /></ChannelCard>
+            <ChannelCard icon={<Send size={18} />} title={copy.feishu} description={copy.feishuDesc} enabled={settings.feishuEnabled} onToggle={(value) => update("feishuEnabled", value)}><label><span>{copy.webhook}</span><input value={settings.feishuWebhook} onChange={(event) => update("feishuWebhook", event.target.value)} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." spellCheck={false} /></label><SecretField id="feishu-secret" label={copy.signSecret} hint={copy.signSecretHint} value={settings.feishuSecret} onChange={(value) => update("feishuSecret", value)} showLabel={copy.showSecret} hideLabel={copy.hideSecret} /></ChannelCard>
             <ChannelCard icon={<Mail size={19} />} title={copy.email} description={copy.emailDesc} enabled={settings.emailEnabled} onToggle={(value) => update("emailEnabled", value)}>
               <div className="form-grid three"><label><span>{copy.smtpHost}</span><input value={settings.smtpHost} onChange={(event) => update("smtpHost", event.target.value)} placeholder="smtp.example.com" /></label><label><span>{copy.port}</span><input type="number" value={settings.smtpPort} onChange={(event) => update("smtpPort", Number(event.target.value))} /></label><label><span>{copy.sender}</span><input value={settings.emailFrom} onChange={(event) => update("emailFrom", event.target.value)} placeholder="ssl@example.com" /></label></div>
-              <div className="form-grid two"><label><span>{copy.smtpUser}</span><input value={settings.smtpUser} onChange={(event) => update("smtpUser", event.target.value)} /></label><label><span>{copy.smtpPassword}</span><input type="password" value={settings.smtpPassword} onChange={(event) => update("smtpPassword", event.target.value)} /></label></div>
+              <div className="form-grid two"><label><span>{copy.smtpUser}</span><input value={settings.smtpUser} onChange={(event) => update("smtpUser", event.target.value)} /></label><SecretField id="smtp-password" label={copy.smtpPassword} value={settings.smtpPassword} onChange={(value) => update("smtpPassword", value)} showLabel={copy.showSecret} hideLabel={copy.hideSecret} /></div>
               <label><span>{copy.recipients} <em>{copy.recipientsHint}</em></span><input value={settings.emailRecipients} onChange={(event) => update("emailRecipients", event.target.value)} placeholder="ops@example.com, admin@example.com" /></label>
             </ChannelCard>
           </div>
         )}
         <div className="modal-actions spread">{tab === "notifications" ? <><button className="secondary-button" onClick={onTest}><Send size={16} />{copy.sendTest}</button><span><button className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" onClick={onSave}>{copy.saveSettings}</button></span></> : <><span /><button className="primary-button" onClick={onClose}>{copy.done}</button></>}</div>
+      </div>
+    </div>
+  );
+}
+
+function SecretField({ id, label, hint, value, onChange, placeholder, showLabel, hideLabel }: { id: string; label: string; hint?: string; value: string; onChange: (value: string) => void; placeholder?: string; showLabel: string; hideLabel: string }) {
+  const [visible, setVisible] = useState(false);
+  const toggleLabel = visible ? hideLabel : showLabel;
+  return (
+    <div className="secret-field stacked-field">
+      <label htmlFor={id}><span>{label} {hint && <em>{hint}</em>}</span></label>
+      <div className="secret-input-wrap">
+        <input id={id} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete="off" spellCheck={false} />
+        <button type="button" onClick={() => setVisible((current) => !current)} aria-label={toggleLabel} title={toggleLabel} aria-pressed={visible}>
+          {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
       </div>
     </div>
   );
@@ -487,7 +511,7 @@ function DeleteGroupModal({ copy, group, onClose, onDeleted, onError }: { copy: 
 
 function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, onToast }: { copy: Messages; language: Language; certificate: Certificate; onClose: () => void; onEdit: () => void; onDelete: () => void; onToast: (type: "success" | "error", text: string) => void }) {
   const status = statusOf(certificate);
-  const [contents, setContents] = useState<{ publicKeyPem: string; privateKey: string } | null>(null);
+  const [contents, setContents] = useState<CertificateExportContents | null>(null);
   const [contentAction, setContentAction] = useState<string | null>(null);
 
   async function copyValue(value: string) {
@@ -505,10 +529,10 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
     const json = await response.json();
     if (!response.ok) throw new Error(json.error || copy.contentUnavailable);
     setContents(json.data);
-    return json.data as { publicKeyPem: string; privateKey: string };
+    return json.data as CertificateExportContents;
   }
 
-  async function copyMaterial(key: "publicKeyPem" | "privateKey") {
+  async function copyMaterial(key: keyof CertificateExportContents) {
     setContentAction(`copy-${key}`);
     try {
       const data = await loadContents();
@@ -521,7 +545,7 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
     }
   }
 
-  async function downloadMaterial(key: "publicKeyPem" | "privateKey", suffix: string) {
+  async function downloadMaterial(key: keyof CertificateExportContents) {
     setContentAction(`download-${key}`);
     try {
       const data = await loadContents();
@@ -529,9 +553,8 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
       const blob = new Blob([data[key]], { type: "application/x-pem-file;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const baseName = certificate.primaryDomain.replace(/^\*\./, "wildcard.").replace(/[^a-zA-Z0-9._-]/g, "-");
       anchor.href = url;
-      anchor.download = `${baseName}${suffix}`;
+      anchor.download = certificateExportNames(certificate.primaryDomain)[key];
       anchor.click();
       URL.revokeObjectURL(url);
       onToast("success", copy.downloaded);
@@ -553,9 +576,8 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const baseName = certificate.primaryDomain.replace(/^\*\./, "wildcard.").replace(/[^a-zA-Z0-9._-]/g, "-");
       anchor.href = url;
-      anchor.download = `${baseName}.keys.zip`;
+      anchor.download = certificateExportNames(certificate.primaryDomain).archive;
       anchor.click();
       URL.revokeObjectURL(url);
       onToast("success", copy.downloaded);
@@ -566,9 +588,9 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
     }
   }
 
-  const materialRows: Array<{ key: "publicKeyPem" | "privateKey"; label: string; suffix: string; disabled?: boolean }> = [
-    { key: "publicKeyPem", label: copy.publicKeyContent, suffix: ".public-key.pem" },
-    { key: "privateKey", label: copy.keyContent, suffix: ".private-key.pem", disabled: !certificate.hasPrivateKey },
+  const materialRows: Array<{ key: keyof CertificateExportContents; label: string; disabled?: boolean }> = [
+    { key: "certificatePem", label: `${copy.certContent} (.pem)` },
+    { key: "privateKey", label: `${copy.keyContent} (.key)`, disabled: !certificate.hasPrivateKey },
   ];
 
   return (
@@ -592,7 +614,7 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
                   <button className="certificate-material-action" disabled={item.disabled || contentAction !== null} onClick={() => void copyMaterial(item.key)} aria-label={`${copy.copyContent}：${item.label}`}>
                     {contentAction === `copy-${item.key}` ? <RefreshCw className="spinning" size={13} /> : <Copy size={13} />}<span>{copy.copyContent}</span>
                   </button>
-                  <button className="certificate-material-action" disabled={item.disabled || contentAction !== null} onClick={() => void downloadMaterial(item.key, item.suffix)} aria-label={`${copy.download}：${item.label}`}>
+                  <button className="certificate-material-action" disabled={item.disabled || contentAction !== null} onClick={() => void downloadMaterial(item.key)} aria-label={`${copy.download}：${item.label}`}>
                     {contentAction === `download-${item.key}` ? <RefreshCw className="spinning" size={13} /> : <Download size={13} />}<span>{copy.download}</span>
                   </button>
                 </div>

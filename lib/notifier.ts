@@ -13,7 +13,7 @@ type BotChannel = "dingtalk" | "feishu";
 type BotResponse = { errcode?: number; errmsg?: string; code?: number; msg?: string; StatusCode?: number; StatusMessage?: string };
 
 async function postJson(url: string, body: unknown, channel: BotChannel) {
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
   const raw = await response.text();
   let result: BotResponse = {};
   try { result = JSON.parse(raw) as BotResponse; } catch { /* A non-JSON error is handled by HTTP status below. */ }
@@ -69,6 +69,9 @@ export async function sendNotifications(settings: NotificationSettings, certific
           host: settings.smtpHost,
           port: settings.smtpPort,
           secure: settings.smtpSecure,
+          connectionTimeout: 15_000,
+          greetingTimeout: 15_000,
+          socketTimeout: 30_000,
           auth: settings.smtpUser ? { user: settings.smtpUser, pass: settings.smtpPassword } : undefined,
         });
         await transport.sendMail({

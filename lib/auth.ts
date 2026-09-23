@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { readAuthConfig, type AuthConfig } from "./auth-config";
 
 export const SESSION_COOKIE_NAME = "certops_session";
 export const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
@@ -12,20 +13,6 @@ type SessionPayload = {
   credentialVersion: string;
   expiresAt: number;
 };
-
-type AuthConfig = {
-  username: string;
-  password: string;
-  sessionSecret: string;
-};
-
-function readAuthConfig(): AuthConfig | null {
-  const username = (process.env.CERTOPS_ADMIN_USERNAME || "").trim();
-  const password = process.env.CERTOPS_ADMIN_PASSWORD || "";
-  const sessionSecret = process.env.CERTOPS_SESSION_SECRET || "";
-  if (!username || username.length > 128 || password.length < 12 || sessionSecret.length < 32) return null;
-  return { username, password, sessionSecret };
-}
 
 function safeEqual(left: string, right: string) {
   const leftHash = createHash("sha256").update(left).digest();

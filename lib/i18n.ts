@@ -34,7 +34,7 @@ const zhCN = {
   notificationTitle: "到期提醒", reminderDesc: "证书到期前 15、7、3、1 天自动发送通知", early: "提前", expiryDay: "到期日",
   dingtalk: "钉钉机器人", dingtalkDesc: "通过群机器人 Webhook 推送", feishu: "飞书机器人", feishuDesc: "通过群机器人 Webhook 推送",
   email: "邮件通知", emailDesc: "通过 SMTP 发送到指定收件人", webhook: "Webhook 地址", signSecret: "加签密钥", signSecretHint: "机器人启用“加签”时必填", smtpHost: "SMTP 主机", port: "端口",
-  sender: "发件人", smtpUser: "SMTP 用户名", smtpPassword: "SMTP 密码", recipients: "收件人", recipientsHint: "多个邮箱用逗号分隔",
+  sender: "发件人", smtpUser: "SMTP 用户名", smtpPassword: "SMTP 密码", showSecret: "显示密钥", hideSecret: "隐藏密钥", recipients: "收件人", recipientsHint: "多个邮箱用逗号分隔",
   sendTest: "发送测试通知", saveSettings: "保存设置", settingsSaved: "通知设置已保存", testSent: "测试通知已发送",
   groupTitle: "新建项目分组", groupDesc: "使用分组隔离管理不同项目的证书。", groupName: "分组名称", groupPlaceholder: "例如：支付业务",
   creating: "创建中…", createGroup: "创建分组", groupCreated: "项目分组已创建", certInfo: "证书信息", algorithm: "加密算法",
@@ -43,7 +43,7 @@ const zhCN = {
   edit: "编辑", editTitle: "编辑证书信息", editDesc: "修改证书名称和所属项目，不会影响证书内容。", saveChanges: "保存修改", updated: "证书信息已更新",
   renameGroup: "修改分组名称", editGroupTitle: "修改项目分组", editGroupDesc: "修改后，该分组下的所有证书会同步显示新名称。", groupUpdated: "分组名称已更新",
   deleteGroup: "删除分组", deleteGroupTitle: "确认删除分组？", deleteGroupWarning: "分组删除后无法恢复。仅空分组可以删除。", confirmDeleteGroup: "确认删除分组", deleting: "删除中…", groupDeleted: "分组已删除", groupDeleteHint: "删除此空分组，此操作无法撤销。", groupDeleteBlocked: "分组内有 {count} 个证书，无法删除",
-  certificateFiles: "公钥与私钥", publicKeyContent: "公钥内容", copyContent: "复制内容", download: "下载", exportCertificate: "导出公私钥 ZIP",
+  certificateFiles: "证书与私钥", publicKeyContent: "公钥内容", copyContent: "复制内容", download: "下载", exportCertificate: "导出证书 ZIP",
   contentUnavailable: "该证书没有可用的证书或密钥内容", downloaded: "文件已导出", loadingContent: "正在读取…",
 };
 
@@ -75,7 +75,7 @@ const zhTW: Copy = {
   notificationTitle: "到期提醒", reminderDesc: "憑證到期前 15、7、3、1 天自動傳送通知", early: "提前", expiryDay: "到期日",
   dingtalk: "釘釘機器人", dingtalkDesc: "透過群組機器人 Webhook 推送", feishu: "飛書機器人", feishuDesc: "透過群組機器人 Webhook 推送",
   email: "郵件通知", emailDesc: "透過 SMTP 傳送給指定收件者", signSecret: "簽章密鑰", signSecretHint: "機器人啟用簽章時必填", sender: "寄件者", recipients: "收件者", recipientsHint: "多個信箱請用逗號分隔",
-  sendTest: "傳送測試通知", saveSettings: "儲存設定", settingsSaved: "通知設定已儲存", testSent: "測試通知已傳送",
+  showSecret: "顯示密鑰", hideSecret: "隱藏密鑰", sendTest: "傳送測試通知", saveSettings: "儲存設定", settingsSaved: "通知設定已儲存", testSent: "測試通知已傳送",
   groupTitle: "新增專案分組", groupDesc: "使用分組隔離管理不同專案的憑證。", groupName: "分組名稱", groupPlaceholder: "例如：支付業務",
   creating: "建立中…", createGroup: "建立分組", groupCreated: "專案分組已建立", certInfo: "憑證資訊", algorithm: "加密演算法",
   validFrom: "生效日期", expiryDate: "到期日期", privateKeyStatus: "私鑰狀態", keyStored: "已加密儲存", keyMissing: "未上傳",
@@ -83,7 +83,7 @@ const zhTW: Copy = {
   edit: "編輯", editTitle: "編輯憑證資訊", editDesc: "修改憑證名稱和所屬專案，不會影響憑證內容。", saveChanges: "儲存修改", updated: "憑證資訊已更新",
   renameGroup: "修改分組名稱", editGroupTitle: "修改專案分組", editGroupDesc: "修改後，此分組下的所有憑證會同步顯示新名稱。", groupUpdated: "分組名稱已更新",
   deleteGroup: "刪除分組", deleteGroupTitle: "確認刪除分組？", deleteGroupWarning: "分組刪除後無法復原。僅空分組可以刪除。", confirmDeleteGroup: "確認刪除分組", deleting: "刪除中…", groupDeleted: "分組已刪除", groupDeleteHint: "刪除此空分組，此操作無法復原。", groupDeleteBlocked: "分組內有 {count} 個憑證，無法刪除",
-  certificateFiles: "公鑰與私鑰", publicKeyContent: "公鑰內容", copyContent: "複製內容", download: "下載", exportCertificate: "匯出公私鑰 ZIP",
+  certificateFiles: "憑證與私鑰", publicKeyContent: "公鑰內容", copyContent: "複製內容", download: "下載", exportCertificate: "匯出憑證 ZIP",
   contentUnavailable: "此憑證沒有可用的憑證或密鑰內容", downloaded: "檔案已匯出", loadingContent: "正在讀取…",
 };
 
@@ -111,7 +111,7 @@ const en: Copy = {
   notificationTitle: "Expiry reminders", reminderDesc: "Automatically notify 15, 7, 3, and 1 day before expiry", early: "Before", expiryDay: "Expiry",
   dingtalk: "DingTalk bot", dingtalkDesc: "Send via group bot Webhook", feishu: "Feishu bot", feishuDesc: "Send via group bot Webhook",
   email: "Email", emailDesc: "Send to selected recipients through SMTP", webhook: "Webhook URL", signSecret: "Signing secret", signSecretHint: "Required when signature security is enabled", smtpHost: "SMTP host", port: "Port", sender: "Sender",
-  smtpUser: "SMTP username", smtpPassword: "SMTP password", recipients: "Recipients", recipientsHint: "Separate multiple emails with commas",
+  smtpUser: "SMTP username", smtpPassword: "SMTP password", showSecret: "Show secret", hideSecret: "Hide secret", recipients: "Recipients", recipientsHint: "Separate multiple emails with commas",
   sendTest: "Send test", saveSettings: "Save settings", settingsSaved: "Notification settings saved", testSent: "Test notification sent",
   groupTitle: "New project group", groupDesc: "Keep certificates for different projects organized independently.", groupName: "Group name", groupPlaceholder: "e.g. Payments",
   creating: "Creating…", createGroup: "Create group", groupCreated: "Project group created", certInfo: "Certificate details", algorithm: "Algorithm",
@@ -120,14 +120,14 @@ const en: Copy = {
   edit: "Edit", editTitle: "Edit certificate", editDesc: "Change the certificate name and project group without modifying its contents.", saveChanges: "Save changes", updated: "Certificate updated",
   renameGroup: "Rename group", editGroupTitle: "Rename project group", editGroupDesc: "All certificates in this group will show the new name.", groupUpdated: "Group name updated",
   deleteGroup: "Delete group", deleteGroupTitle: "Delete project group?", deleteGroupWarning: "This cannot be undone. Only empty groups can be deleted.", confirmDeleteGroup: "Delete group", deleting: "Deleting…", groupDeleted: "Group deleted", groupDeleteHint: "Delete this empty group. This action cannot be undone.", groupDeleteBlocked: "This group contains {count} certificates and cannot be deleted",
-  certificateFiles: "Public and private keys", publicKeyContent: "Public key content", copyContent: "Copy content", download: "Download", exportCertificate: "Export keys ZIP",
+  certificateFiles: "Certificate and private key", publicKeyContent: "Public key content", copyContent: "Copy content", download: "Download", exportCertificate: "Export certificate ZIP",
   contentUnavailable: "No certificate or key content is available", downloaded: "File exported", loadingContent: "Loading…",
 };
 
 const ja: Copy = {
   ...en,
   certManagement: "証明書管理", projectGroups: "プロジェクトグループ", allCertificates: "すべての証明書", newGroup: "グループ作成",
-  systemSettings: "システム設定", administrator: "管理者", localWorkspace: "ローカルワークスペース", logout: "ログアウト", workspace: "ワークスペース", refresh: "更新",
+  systemSettings: "システム設定", administrator: "管理者", localWorkspace: "ローカルワークスペース", logout: "ログアウト", showSecret: "シークレットを表示", hideSecret: "シークレットを隠す", workspace: "ワークスペース", refresh: "更新",
   uploadCertificate: "証明書をアップロード", certTotal: "証明書数", healthy: "正常", expiring30: "30日以内に期限切れ", expired: "期限切れ",
   projectsUnit: "プロジェクトグループ", healthRate: "正常率", noCertificates: "証明書なし", renewSoon: "更新を推奨", noRisk: "期限切れリスクなし",
   actNow: "至急対応が必要", noExpired: "期限切れ証明書なし", overviewLabel: "証明書概要", listSubtitle: "証明書の状態、プロジェクト、有効期限を確認",
@@ -150,12 +150,13 @@ const ja: Copy = {
   validFrom: "有効開始日", expiryDate: "有効期限", privateKeyStatus: "秘密鍵", keyStored: "暗号化して保存済み", keyMissing: "未登録", domains: "ドメイン",
   copied: "クリップボードにコピーしました", done: "完了", operationFailed: "操作に失敗しました。もう一度お試しください。",
   edit: "編集", editTitle: "証明書情報を編集", editDesc: "証明書の内容を変更せずに、名前とプロジェクトを変更します。", saveChanges: "変更を保存", updated: "証明書情報を更新しました",
+  certificateFiles: "証明書と秘密鍵", copyContent: "コピー", download: "ダウンロード", exportCertificate: "証明書 ZIP を出力",
 };
 
 const ko: Copy = {
   ...en,
   certManagement: "인증서 관리", projectGroups: "프로젝트 그룹", allCertificates: "모든 인증서", newGroup: "그룹 만들기",
-  systemSettings: "시스템 설정", administrator: "관리자", localWorkspace: "로컬 작업공간", logout: "로그아웃", workspace: "작업공간", refresh: "새로고침",
+  systemSettings: "시스템 설정", administrator: "관리자", localWorkspace: "로컬 작업공간", logout: "로그아웃", showSecret: "비밀 표시", hideSecret: "비밀 숨기기", workspace: "작업공간", refresh: "새로고침",
   uploadCertificate: "인증서 업로드", certTotal: "전체 인증서", healthy: "정상", expiring30: "30일 이내 만료", expired: "만료됨",
   projectsUnit: "프로젝트 그룹", healthRate: "정상 비율", noCertificates: "인증서 없음", renewSoon: "갱신 권장", noRisk: "만료 위험 없음",
   actNow: "즉시 조치 필요", noExpired: "만료된 인증서 없음", overviewLabel: "인증서 개요", listSubtitle: "인증서 상태, 프로젝트 및 유효기간 확인",
@@ -178,6 +179,7 @@ const ko: Copy = {
   validFrom: "유효 시작일", expiryDate: "만료일", privateKeyStatus: "개인 키", keyStored: "암호화 저장됨", keyMissing: "업로드 안 됨", domains: "도메인",
   copied: "클립보드에 복사했습니다", done: "완료", operationFailed: "작업에 실패했습니다. 다시 시도하세요.",
   edit: "편집", editTitle: "인증서 정보 편집", editDesc: "인증서 내용은 그대로 두고 이름과 프로젝트 그룹을 변경합니다.", saveChanges: "변경사항 저장", updated: "인증서 정보가 업데이트되었습니다",
+  certificateFiles: "인증서 및 개인 키", copyContent: "복사", download: "다운로드", exportCertificate: "인증서 ZIP 내보내기",
 };
 
 export const messages: Record<Language, Copy> = { "zh-CN": zhCN, "zh-TW": zhTW, en, ja, ko };

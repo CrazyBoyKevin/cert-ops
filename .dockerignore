@@ -8,3 +8,13 @@ node_modules
 npm-debug.log*
 work
 outputs
+*.tsbuildinfo
+*.pem
+*.key
+*.p12
+*.pfx
+.codex
+.agents
+.openai
+AGENTS.md
+CLAUDE.md

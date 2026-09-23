@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { dueCertificates, getNotificationSettings } from "@/lib/repository";
-import { sendNotifications } from "@/lib/notifier";
+import { runReminderCheck } from "@/lib/reminders";
 
 export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -10,12 +9,9 @@ export async function POST(request: Request) {
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const settings = await getNotificationSettings();
-  const due = await dueCertificates();
-  const deliveries = await Promise.all(due.map(async ({ certificate, days }) => ({
-    certificate: certificate.primaryDomain,
-    days,
-    results: await sendNotifications(settings, certificate, days),
-  })));
-  return NextResponse.json({ checkedAt: new Date().toISOString(), deliveries });
+  try {
+    return NextResponse.json(await runReminderCheck(), { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "到期检查失败，请检查数据库连接和通知配置" }, { status: 503 });
+  }
 }

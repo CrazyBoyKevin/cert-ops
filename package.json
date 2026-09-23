@@ -1,6 +1,6 @@
 {
   "name": "cert-ops",
-  "version": "0.1.0",
+  "version": "0.0.7",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -13,6 +13,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
+    "@alicloud/pop-core": "^1.8.0",
+    "acme-client": "^5.4.0",
     "lucide-react": "^1.28.0",
     "next": "^16.3.0",
     "nodemailer": "^9.0.4",

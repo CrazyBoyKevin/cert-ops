@@ -1,0 +1,9 @@
+# Optional source-build override for the current checkout (including ACME).
+# docker compose -f compose.example.yml -f compose.acme.example.yml up -d --build
+services:
+  certops:
+    image: cert-ops:acme-local
+    build:
+      context: .
+    environment:
+      ACME_SCHEDULER_ENABLED: "true"
