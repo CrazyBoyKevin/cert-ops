@@ -44,6 +44,22 @@ export function validateId(id: unknown): string {
   return id;
 }
 
+export type OrderQuery = { scope?: "pending"; certificateId?: string; id?: string; page?: number };
+
+export function parseOrderQuery(params: URLSearchParams): OrderQuery {
+  const scope = params.get("scope"), certificateId = params.get("certificateId"), id = params.get("id");
+  if ([scope, certificateId, id].filter((value) => value !== null).length > 1 ||
+      (scope !== null && scope !== "pending") || (params.has("page") && scope !== "pending")) throw new AcmeError("INVALID_REQUEST");
+  if (certificateId !== null) return { certificateId: validateId(certificateId) };
+  if (id !== null) return { id: validateId(id) };
+  if (scope === "pending") {
+    const rawPage = params.get("page") ?? "1";
+    if (!/^[1-9]\d{0,6}$/.test(rawPage)) throw new AcmeError("INVALID_REQUEST");
+    return { scope, page: Number(rawPage) };
+  }
+  return {};
+}
+
 export function challengeRecord(domain: string, zone: string) {
   const base = normalizeDomain(domain).replace(/^\*\./, "");
   if (base !== zone && !base.endsWith(`.${zone}`)) throw new AcmeError("DOMAIN_OUTSIDE_ZONE");

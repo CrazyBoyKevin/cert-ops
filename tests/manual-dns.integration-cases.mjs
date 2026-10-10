@@ -43,6 +43,7 @@ export async function manualDnsCases({ pool, groupId, scratch, exec }) {
   const action = (kind, wait) => withAcmeDb((db) => changeManualOrder(db, order.id, kind, wait));
   const get = async () => (await listAcmeOrders()).data.find((o) => o.id === order.id);
   assert.equal(await process(), "waiting_dns");
+  assert.ok((await listAcmeOrders({ scope: "pending" })).data.some((item) => item.id === order.id));
   const original = (await pool.query("SELECT manual_state_encrypted FROM cert_ops.acme_orders WHERE id=$1", [order.id])).rows[0].manual_state_encrypted;
   assert.ok(!original.includes("PRIVATE KEY"));
   assert.equal((await get()).manualRecords.length, 2);
@@ -76,10 +77,14 @@ export async function manualDnsCases({ pool, groupId, scratch, exec }) {
   assert.equal(await process(), "issued"); // Recover the already-finalized remote order without a new CSR or order.
   assert.equal(created, 1); assert.equal(completed, 2); assert.equal(finalized, 1);
   const issued = await get(); assert.ok(issued.certificateId); assert.equal(issued.status, "issued");
+  assert.ok(!(await listAcmeOrders({ scope: "pending" })).data.some((item) => item.id === order.id));
+  assert.equal((await listAcmeOrders({ certificateId: issued.certificateId })).data[0].id, order.id);
   assert.equal(issued.manualRecords.length, 2); // Retained for manual cleanup.
   assert.equal((await pool.query("SELECT manual_state_encrypted FROM cert_ops.acme_orders WHERE id=$1", [order.id])).rows[0].manual_state_encrypted, null);
   assert.equal((await pool.query("SELECT COUNT(*)::int AS count FROM cert_ops.acme_dns_records WHERE order_id=$1", [order.id])).rows[0].count, 0);
   await changeAcmeOrder(order.id, "renew");
+  assert.ok(!(await listAcmeOrders({ scope: "pending" })).data.some((item) => item.id === order.id));
+  assert.equal((await listAcmeOrders({ certificateId: issued.certificateId })).data[0].status, "queued");
   assert.equal((await get()).certificateId, issued.certificateId); assert.equal((await get()).autoRenew, false);
   assert.deepEqual((await get()).manualRecords, []);
   const reused = await queueAcmeOrder({ ...input, environment: "production" });

@@ -18,7 +18,7 @@ services:
       start_period: 10s
 
   certops:
-    image: docker.io/easitwch/cert-ops:0.0.7
+    image: docker.io/easitwch/cert-ops:0.0.9
     restart: unless-stopped
     depends_on:
       postgres:

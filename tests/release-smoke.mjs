@@ -73,6 +73,9 @@ try {
     assert.equal((await api("/api/acme/orders", { ...request, credentialId: undefined }, "POST", 400)).error, "CREDENTIAL_REQUIRED");
     const order = (await api("/api/acme/orders", request, "POST", 202)).data;
     assert.equal(order.credentialId, accountB);
+    const pending = await api("/api/acme/orders?scope=pending&page=1");
+    assert.equal(pending.total, 1); assert.equal(pending.data[0].id, order.id);
+    await api("/api/acme/orders?scope=pending&page=-1", undefined, "GET", 400);
     assert.equal((await api("/api/acme/credentials", { id: accountB, confirmed: true }, "DELETE", 400)).error, "CREDENTIAL_IN_USE");
     await api("/api/acme/credentials", { id: accountB, name: "Account B renamed", accessKeyId: "", accessKeySecret: "" }, "PATCH");
     const { readOrderIssuanceConfig } = await import("../lib/acme-worker.ts");
@@ -91,6 +94,9 @@ try {
     });
     const certificate = (await api("/api/certificates")).data.find((cert) => cert.name === request.name);
     assert.ok(certificate?.hasPrivateKey);
+    assert.equal((await api("/api/acme/orders?scope=pending")).total, 0);
+    assert.equal((await api(`/api/acme/orders?certificateId=${certificate.id}`)).data[0].id, order.id);
+    assert.equal((await api(`/api/acme/orders?id=${order.id}`)).data[0].certificateId, certificate.id);
     await api("/api/certificates", { id: certificate.id, name: "Renamed on renewal", groupId: groups[1].id }, "PATCH");
     const managed = (await api("/api/acme/orders")).data.find((item) => item.id === order.id);
     assert.equal(managed.credentialId, accountB);
@@ -137,11 +143,16 @@ try {
     await withAcmeDb((db) => storeIssuedCertificate(db, manual, pem, key));
     const manualIssued = (await api("/api/acme/orders")).data[0];
     assert.equal(manualIssued.status, "issued"); assert.equal(manualIssued.autoRenew, false);
+    assert.equal((await api("/api/acme/orders?scope=pending")).total, 0);
+    await api("/api/acme/orders", { id: manual.id, action: "renew" }, "PATCH");
+    assert.equal((await api("/api/acme/orders?scope=pending")).total, 0);
+    const renewal = (await api(`/api/acme/orders?certificateId=${manualIssued.certificateId}`)).data[0];
+    assert.equal(renewal.status, "queued"); assert.equal(renewal.id, manual.id);
     await api("/api/certificates", { id: manualIssued.certificateId, confirmed: true }, "DELETE");
     const report = JSON.parse(await command("exec", appId, "node", "-e", 'const fs=require("fs"); console.log(JSON.stringify({version:require("./package.json").version,arch:process.arch,nodeEnv:process.env.NODE_ENV,localEnvIncluded:fs.existsSync(".env.local"),acmeSchema:fs.existsSync("db/acme.sql")}))'));
     assert.equal(report.version, version); assert.equal(report.nodeEnv, "production"); assert.equal(report.localEnvIncluded, false); assert.equal(report.acmeSchema, true);
     assert.equal(report.arch, arch === "amd64" ? "x64" : "arm64");
-    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed" }));
+    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", requestRenewalSeparation: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed" }));
     await command("stop", appId); active.splice(active.indexOf(appId), 1);
   }
   console.log("Release smoke tests passed for both platforms.");

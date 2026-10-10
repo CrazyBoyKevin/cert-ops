@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS cert_ops.acme_orders (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS acme_orders_schedule_idx ON cert_ops.acme_orders(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS acme_orders_pending_idx ON cert_ops.acme_orders(created_at DESC, id DESC) WHERE certificate_id IS NULL;
 CREATE TABLE IF NOT EXISTS cert_ops.aliyun_credentials (
   id UUID PRIMARY KEY,
   name VARCHAR(100) NOT NULL,

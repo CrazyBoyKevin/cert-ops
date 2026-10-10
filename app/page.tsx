@@ -9,9 +9,10 @@ import {
 } from "lucide-react";
 import { LANGUAGES, messages, type Language, type Messages } from "@/lib/i18n";
 import type { Certificate, Group, NotificationSettings, StorageMode } from "@/lib/types";
-import { AcmeModal, AcmeSettingsPanel } from "./acme-panel";
+import { AcmeModal, AcmeSettingsPanel, CertificateAcmePanel } from "./acme-panel";
 import { acmeMessages } from "@/lib/acme-i18n";
 import { certificateExportNames, type CertificateExportContents } from "@/lib/certificate-export";
+import { copyText } from "@/lib/clipboard";
 
 const EMPTY_SETTINGS: NotificationSettings = {
   dingtalkEnabled: false, dingtalkWebhook: "", dingtalkSecret: "", feishuEnabled: false, feishuWebhook: "", feishuSecret: "",
@@ -86,9 +87,11 @@ export default function Home() {
       ]);
       const [certJson, groupJson, settingsJson] = await Promise.all([certResponse.json(), groupResponse.json(), settingsResponse.json()]);
       setCertificates(certJson.data || []);
+      setDetailTarget((current) => current ? certJson.data?.find((item: Certificate) => item.id === current.id) || null : null);
       setGroups(groupJson.data || []);
       setStorage(certJson.storage || groupJson.storage || "demo");
       setSettings({ ...EMPTY_SETTINGS, ...(settingsJson.data || {}) });
+      return (certJson.data || []) as Certificate[];
     } catch {
       showToast("error", copy.operationFailed);
     } finally {
@@ -290,12 +293,12 @@ export default function Home() {
 
       {uploadOpen && <UploadModal copy={copy} groups={groups} onClose={() => setUploadOpen(false)} onSuccess={(message) => { setUploadOpen(false); showToast("success", message); void loadData(); }} onError={(message) => showToast("error", message)} />}
       {editTarget && <EditCertificateModal copy={copy} certificate={editTarget} groups={groups} onClose={() => setEditTarget(null)} onUpdated={(certificate) => { setEditTarget(null); setCertificates((items) => items.map((item) => item.id === certificate.id ? certificate : item)); setDetailTarget((current) => current?.id === certificate.id ? certificate : current); showToast("success", copy.updated); void loadData(); }} onError={(message) => showToast("error", message)} />}
-      {acmeOpen && <AcmeModal language={language} groups={groups} initialGroup={groupFilter} onClose={() => { setAcmeOpen(false); void loadData(); }} onConfigure={() => { setAcmeOpen(false); setSettingsInitialAcme(true); setSettingsOpen(true); }} />}
+      {acmeOpen && <AcmeModal language={language} groups={groups} initialGroup={groupFilter} onClose={() => { setAcmeOpen(false); void loadData(); }} onOpenCertificate={(id) => { void loadData().then((items) => { const certificate = items?.find((item) => item.id === id); if (certificate) { setAcmeOpen(false); setDetailTarget(certificate); } }); }} onConfigure={() => { setAcmeOpen(false); setSettingsInitialAcme(true); setSettingsOpen(true); }} />}
       {settingsOpen && <SystemSettingsModal initialAcme={settingsInitialAcme} copy={copy} language={language} onLanguageChange={changeLanguage} settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}
       {groupOpen && <GroupModal copy={copy} onClose={() => setGroupOpen(false)} onCreated={(group) => { setGroupOpen(false); setGroups((items) => [...items, group]); setGroupFilter(group.id); showToast("success", copy.groupCreated); }} onError={(message) => showToast("error", message)} />}
       {groupEditTarget && <EditGroupModal copy={copy} group={groupEditTarget} onClose={() => setGroupEditTarget(null)} onDelete={() => { setGroupDeleteTarget(groupEditTarget); setGroupEditTarget(null); }} onUpdated={(group) => { setGroupEditTarget(null); setGroups((items) => items.map((item) => item.id === group.id ? { ...item, ...group } : item)); setCertificates((items) => items.map((item) => item.groupId === group.id ? { ...item, groupName: group.name } : item)); setDetailTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); setEditTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); showToast("success", copy.groupUpdated); }} onError={(message) => showToast("error", message)} />}
       {groupDeleteTarget && <DeleteGroupModal copy={copy} group={groupDeleteTarget} onClose={() => setGroupDeleteTarget(null)} onDeleted={() => { const deletedId = groupDeleteTarget.id; setGroupDeleteTarget(null); setGroups((items) => items.filter((item) => item.id !== deletedId)); if (groupFilter === deletedId) setGroupFilter("all"); showToast("success", copy.groupDeleted); }} onError={(message) => showToast("error", message)} />}
-      {detailTarget && <DetailDrawer copy={copy} language={language} certificate={detailTarget} onClose={() => setDetailTarget(null)} onEdit={() => { setEditTarget(detailTarget); setDetailTarget(null); }} onDelete={() => { setDeleteTarget(detailTarget); setDeleteConfirmed(false); setDetailTarget(null); }} onToast={showToast} />}
+      {detailTarget && <DetailDrawer key={`${detailTarget.id}:${detailTarget.fingerprint}`} copy={copy} language={language} certificate={detailTarget} onIssued={() => void loadData()} onClose={() => setDetailTarget(null)} onEdit={() => { setEditTarget(detailTarget); setDetailTarget(null); }} onDelete={() => { setDeleteTarget(detailTarget); setDeleteConfirmed(false); setDetailTarget(null); }} onToast={showToast} />}
 
       {deleteTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDeleteTarget(null)}>
@@ -509,17 +512,17 @@ function DeleteGroupModal({ copy, group, onClose, onDeleted, onError }: { copy: 
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-group-title"><button className="modal-close" onClick={onClose}><X size={19} /></button><span className="danger-icon"><Trash2 size={22} /></span><h2 id="delete-group-title">{copy.deleteGroupTitle}</h2><p>{copy.deleteGroupWarning}</p><div className="delete-cert"><Folder size={18} /><span><strong>{group.name}</strong><small>{copy.noCertificates}</small></span></div><div className="modal-actions"><button className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="danger-button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? copy.deleting : copy.confirmDeleteGroup}</button></div></div></div>;
 }
 
-function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, onToast }: { copy: Messages; language: Language; certificate: Certificate; onClose: () => void; onEdit: () => void; onDelete: () => void; onToast: (type: "success" | "error", text: string) => void }) {
+function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, onToast, onIssued }: { copy: Messages; language: Language; certificate: Certificate; onClose: () => void; onEdit: () => void; onDelete: () => void; onToast: (type: "success" | "error", text: string) => void; onIssued: () => void }) {
   const status = statusOf(certificate);
   const [contents, setContents] = useState<CertificateExportContents | null>(null);
   const [contentAction, setContentAction] = useState<string | null>(null);
 
   async function copyValue(value: string) {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyText(value);
       onToast("success", copy.copied);
     } catch {
-      onToast("error", copy.operationFailed);
+      onToast("error", copy.copyFailed);
     }
   }
 
@@ -599,6 +602,7 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
         <button className="modal-close" onClick={onClose}><X size={19} /></button>
         <div className="drawer-hero"><span className="large-cert-icon"><ShieldCheck size={27} /></span><span className={`status-badge ${status.tone}`}><i />{statusLabel(certificate, copy)}</span><h2>{certificate.primaryDomain}</h2><p>{certificate.name}</p></div>
         <div className="detail-section"><h3>{copy.certInfo}</h3><DetailRow label={copy.issuer} value={certificate.issuer} /><DetailRow label={copy.project} value={certificate.groupName || "—"} /><DetailRow label={copy.algorithm} value={certificate.algorithm} /><DetailRow label={copy.validFrom} value={formatDate(certificate.validFrom, language)} /><DetailRow label={copy.expiryDate} value={formatDate(certificate.expiresAt, language)} /><DetailRow label={copy.privateKeyStatus} value={certificate.hasPrivateKey ? copy.keyStored : copy.keyMissing} /></div>
+        <CertificateAcmePanel language={language} certificateId={certificate.id} onIssued={onIssued} />
         <div className="detail-section"><h3>{copy.domains}</h3><div className="domain-list">{certificate.domains.map((domain) => <span key={domain}>{domain}<button onClick={() => void copyValue(domain)} aria-label={`${copy.copyContent} ${domain}`}><Copy size={13} /></button></span>)}</div></div>
         <div className="detail-section"><h3>{copy.fingerprint}</h3><button className="fingerprint" onClick={() => void copyValue(certificate.fingerprint)}><code>{certificate.fingerprint}</code><Copy size={14} /></button></div>
         <div className="detail-section certificate-material-section">

@@ -9,6 +9,7 @@ export const LANGUAGES = [
 export type Language = (typeof LANGUAGES)[number]["code"];
 
 const zhCN = {
+  copyFailed: "浏览器未允许复制，请重试或下载对应文件。",
   certManagement: "证书管理", projectGroups: "项目分组", allCertificates: "全部证书", newGroup: "新建分组",
   systemSettings: "系统设置", administrator: "管理员", localWorkspace: "本地工作区", logout: "退出登录", workspace: "工作台",
   refresh: "刷新", uploadCertificate: "上传证书", demoMode: "演示模式",
@@ -52,6 +53,7 @@ export type Messages = Copy;
 
 const zhTW: Copy = {
   ...zhCN,
+  copyFailed: "瀏覽器未允許複製，請重試或下載對應檔案。",
   certManagement: "憑證管理", projectGroups: "專案分組", allCertificates: "全部憑證", newGroup: "新增分組",
   systemSettings: "系統設定", administrator: "管理員", localWorkspace: "本機工作區", logout: "登出", workspace: "工作台",
   refresh: "重新整理", uploadCertificate: "上傳憑證", demoMode: "展示模式",
@@ -88,6 +90,7 @@ const zhTW: Copy = {
 };
 
 const en: Copy = {
+  copyFailed: "Your browser blocked copying. Retry or download the file.",
   certManagement: "Certificates", projectGroups: "Project groups", allCertificates: "All certificates", newGroup: "New group",
   systemSettings: "System settings", administrator: "Administrator", localWorkspace: "Local workspace", logout: "Sign out", workspace: "Workspace", refresh: "Refresh",
   uploadCertificate: "Upload certificate", demoMode: "Demo mode", demoNote: "PostgreSQL is not connected. Demo data is shown until persistent storage becomes available.",
@@ -126,6 +129,7 @@ const en: Copy = {
 
 const ja: Copy = {
   ...en,
+  copyFailed: "ブラウザーがコピーを許可しませんでした。再試行するか、ファイルをダウンロードしてください。",
   certManagement: "証明書管理", projectGroups: "プロジェクトグループ", allCertificates: "すべての証明書", newGroup: "グループ作成",
   systemSettings: "システム設定", administrator: "管理者", localWorkspace: "ローカルワークスペース", logout: "ログアウト", showSecret: "シークレットを表示", hideSecret: "シークレットを隠す", workspace: "ワークスペース", refresh: "更新",
   uploadCertificate: "証明書をアップロード", certTotal: "証明書数", healthy: "正常", expiring30: "30日以内に期限切れ", expired: "期限切れ",
@@ -155,6 +159,7 @@ const ja: Copy = {
 
 const ko: Copy = {
   ...en,
+  copyFailed: "브라우저가 복사를 허용하지 않았습니다. 다시 시도하거나 파일을 다운로드하세요.",
   certManagement: "인증서 관리", projectGroups: "프로젝트 그룹", allCertificates: "모든 인증서", newGroup: "그룹 만들기",
   systemSettings: "시스템 설정", administrator: "관리자", localWorkspace: "로컬 작업공간", logout: "로그아웃", showSecret: "비밀 표시", hideSecret: "비밀 숨기기", workspace: "작업공간", refresh: "새로고침",
   uploadCertificate: "인증서 업로드", certTotal: "전체 인증서", healthy: "정상", expiring30: "30일 이내 만료", expired: "만료됨",

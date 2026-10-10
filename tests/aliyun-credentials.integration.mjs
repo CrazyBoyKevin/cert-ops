@@ -164,8 +164,38 @@ try {
   assert.equal((await api("/api/acme/orders", "PATCH", { id: manual.id, action: "checkDns" })).ready, true);
   assert.equal((await api("/api/acme/orders", "PATCH", { id: manual.id, action: "continue" })).queued, true);
   await api("/api/acme/orders", "PATCH", { id: manual.id, action: "continue" }, 400);
+  // New-request inbox excludes issued certificates AND all in-progress/failed renewals.
+  for (const status of ["issued", "queued", "running", "failed", "waiting_dns", "dns_ready"]) {
+    await pool.query("UPDATE cert_ops.acme_orders SET status=$2 WHERE id=$1", [orderB.id, status]);
+    const pending = await api("/api/acme/orders?scope=pending");
+    assert.ok(pending.data.every((order) => order.certificateId === null));
+    assert.ok(!pending.data.some((order) => order.id === orderB.id));
+    const details = await api(`/api/acme/orders?certificateId=${issued.certificateId}`);
+    assert.equal(details.data.length, 1);
+    assert.equal(details.data[0].id, orderB.id);
+    assert.equal(details.data[0].status, status);
+  }
+  await pool.query("UPDATE cert_ops.acme_orders SET status='issued' WHERE id=$1", [orderB.id]);
+  assert.equal((await api(`/api/acme/orders?id=${orderB.id}`)).data[0].certificateId, issued.certificateId);
+  assert.equal((await api(`/api/acme/orders?certificateId=${randomUUID()}`)).data.length, 0);
+  for (const query of ["scope=bad", "scope=pending&page=-1", "certificateId=bad", `scope=pending&id=${manual.id}`]) await api(`/api/acme/orders?${query}`, "GET", undefined, 400);
+  assert.equal((await fetch(base + "/api/acme/orders?scope=pending")).status, 401);
+  const pageFixtures = Array.from({ length: 12 }, () => randomUUID());
+  for (const id of pageFixtures) await pool.query(`INSERT INTO cert_ops.acme_orders(id,name,group_id,domains,zone,environment,auto_renew,dns_provider,status)
+    VALUES($1,'Pagination fixture',$2,'["pagination.example.com"]','example.com','staging',FALSE,'manual','failed')`, [id, groupId]);
+  const firstPage = await api("/api/acme/orders?scope=pending&page=1");
+  const secondPage = await api("/api/acme/orders?scope=pending&page=2");
+  assert.equal(firstPage.data.length, 10); assert.ok(firstPage.total >= 12);
+  assert.ok(secondPage.data.length > 0);
+  assert.ok(secondPage.data.every((order) => !firstPage.data.some((first) => first.id === order.id)));
+  const clamped = await api("/api/acme/orders?scope=pending&page=9999999");
+  assert.equal(clamped.page, clamped.pages);
+  await pool.query("DELETE FROM cert_ops.acme_orders WHERE id=ANY($1::uuid[])", [pageFixtures]);
+  console.log("Pending request pagination, certificate-scoped renewals, tracking and query validation passed.");
   console.log("Authenticated API CRUD, required selection, masked responses, and runtime integration passed. No real DNS or CA calls.");
   if (process.env.CERTOPS_TEST_PREVIEW === "true") {
+    await pool.query(`UPDATE cert_ops.acme_orders SET status='issued',stage='issued',manual_expires_at=NOW()+INTERVAL '1 hour',manual_records=$1
+      WHERE certificate_id IS NOT NULL AND dns_provider='manual'`, [JSON.stringify([{ name: "_acme-challenge.manual.example.com", rr: "_acme-challenge", type: "TXT", value: "sample-issued-cleanup-value", domain: "manual.example.com", verified: true }])]);
     await pool.query(`UPDATE cert_ops.acme_orders SET status='waiting_dns',stage='waiting_dns',manual_expires_at=NOW()+INTERVAL '1 hour',manual_records=$2 WHERE id=$1`,
       [manual.id, JSON.stringify(["sample-root-value", "sample-wildcard-value"].map((value, index) => ({ name: "_acme-challenge.api-manual.example.com", rr: "_acme-challenge", type: "TXT", value, domain: `${index ? "*." : ""}api-manual.example.com`, verified: false })))]);
     console.log(`Isolated visual QA ready: ${base} (integration-admin; test-only password in runner).`);

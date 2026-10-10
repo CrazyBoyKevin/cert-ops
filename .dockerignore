@@ -16,5 +16,7 @@ outputs
 .codex
 .agents
 .openai
+.aws
+.ssh
 AGENTS.md
 CLAUDE.md

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { FileKey2, Plus, RefreshCw, Settings, ShieldCheck, X } from "lucide-react";
 import { messages, type Language } from "@/lib/i18n";
 import { acmeMessages } from "@/lib/acme-i18n";
 import type { AcmeOrder, PublicAcmeSettings, PublicAliyunCredential } from "@/lib/acme-types";
 import type { Group } from "@/lib/types";
+import { copyText } from "@/lib/clipboard";
 
 async function api(url: string, body?: unknown, method = "POST") {
   const response = await fetch(url, { cache: "no-store", ...(body ? { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
@@ -116,8 +117,8 @@ export function AcmeSettingsPanel({ language }: { language: Language }) {
   </div>;
 }
 
-export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure }: {
-  language: Language; groups: Group[]; initialGroup: string; onClose: () => void; onConfigure: () => void;
+export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure, onOpenCertificate }: {
+  language: Language; groups: Group[]; initialGroup: string; onClose: () => void; onConfigure: () => void; onOpenCertificate: (id: string) => void;
 }) {
   const copy = acmeMessages(language), common = messages[language];
   const [tab, setTab] = useState<"new" | "orders">("new");
@@ -129,30 +130,36 @@ export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [queued, setQueued] = useState<"aliyun" | "manual" | null>(null);
+  const [trackedId, setTrackedId] = useState<string | null>(null);
+  const [completed, setCompleted] = useState<AcmeOrder | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
   const [pendingCleanup, setPendingCleanup] = useState(0);
   const [name, setName] = useState("");
   const [zone, setZone] = useState("");
   const [domains, setDomains] = useState("");
   const [groupId, setGroupId] = useState(groups.some((g) => g.id === initialGroup) ? initialGroup : groups[0]?.id || "");
   const [environment, setEnvironment] = useState("staging");
-  const [autoRenew, setAutoRenew] = useState(true);
   const refresh = useCallback(async () => {
-    const json = await api("/api/acme/orders");
-    setOrders(json.data); setPendingCleanup(json.pendingCleanup);
-  }, []);
+    const json = await api(`/api/acme/orders?scope=pending&page=${page}`);
+    setOrders(json.data); setPendingCleanup(json.pendingCleanup); setPagination(json); setPage(json.page);
+  }, [page]);
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
-        const [settings, list] = await Promise.all([api("/api/acme/settings"), api("/api/acme/orders")]);
-        if (active) { setConfigured(settings.data.termsAgreed && Boolean(settings.data.email)); setCredentials(settings.data.credentials); setOrders(list.data); setPendingCleanup(list.pendingCleanup); }
+        const [settings, list, tracked] = await Promise.all([api("/api/acme/settings"), api(`/api/acme/orders?scope=pending&page=${page}`), trackedId ? api(`/api/acme/orders?id=${trackedId}`) : Promise.resolve(null)]);
+        if (active) {
+          setConfigured(settings.data.termsAgreed && Boolean(settings.data.email)); setCredentials(settings.data.credentials);
+          setOrders(list.data); setPendingCleanup(list.pendingCleanup); setPagination(list); setPage(list.page);
+          if (tracked?.data[0]?.certificateId) { setCompleted(tracked.data[0]); setTrackedId(null); }
+        }
       } catch (error) { if (active) setError(error); } finally { if (active) setLoading(false); }
     };
     void load();
     const timer = setInterval(() => { if (!document.hidden) void load(); }, 5000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [page, trackedId]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     document.addEventListener("keydown", escape);
@@ -161,17 +168,18 @@ export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      await api("/api/acme/orders", { name, zone, domains, groupId, environment, dnsProvider, autoRenew: dnsProvider === "manual" ? false : autoRenew, credentialId: dnsProvider === "manual" ? null : credentialId });
-      setQueued(dnsProvider); setTab("orders"); await refresh();
+      const result = await api("/api/acme/orders", { name, zone, domains, groupId, environment, dnsProvider, autoRenew: false, credentialId: dnsProvider === "manual" ? null : credentialId });
+      setTrackedId(result.data.id); setCompleted(null); setPage(1); setTab("orders");
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
   async function change(order: AcmeOrder, action: "renew" | "autoRenew" | "remove" | "checkDns" | "continue") {
-    if (action === "renew" && !window.confirm(order.dnsProvider === "manual" ? copy.manualRetryConfirm : copy.renewConfirm)) return;
+    if (action === "renew" && !window.confirm(order.dnsProvider === "manual" ? copy.manualRetryConfirm : copy.retryConfirm)) return;
     if (action === "remove" && !window.confirm(copy.removeConfirm + (order.dnsProvider === "manual" ? `\n${copy.manualCleanup}` : ""))) return;
     setBusy(true); setError(null);
     try {
       await api("/api/acme/orders", { id: order.id, action, autoRenew: !order.autoRenew, confirmed: true }, action === "remove" ? "DELETE" : "PATCH");
-      setQueued(null);
+      if (action !== "remove") { setTrackedId(order.id); setCompleted(null); }
+      else if (trackedId === order.id) setTrackedId(null);
       await refresh();
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
@@ -179,7 +187,7 @@ export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure
     <div className="modal acme-modal" role="dialog" aria-modal="true" aria-labelledby="acme-title">
       <button className="modal-close" onClick={onClose} aria-label={common.done}><X size={19} /></button>
       <div className="modal-title-row"><span className="title-icon"><FileKey2 size={21} /></span><div><h2 id="acme-title">{copy.title}</h2><p>{copy.subtitle}</p></div></div>
-      <div className="mode-tabs"><button className={tab === "new" ? "active" : ""} onClick={() => setTab("new")}>{copy.newOrder}</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}>{copy.orders} · {orders.length}</button></div>
+      <div className="mode-tabs"><button className={tab === "new" ? "active" : ""} onClick={() => setTab("new")}>{copy.newOrder}</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}>{copy.orders} · {pagination.total}</button></div>
       {error != null && <div className="acme-notice error" role="alert">{errorText(error, language)}</div>}
       {pendingCleanup > 0 && <div className="acme-notice">{copy.cleanup}</div>}
       {loading ? <p>{common.loadingContent}</p> : tab === "new" ? <form className="acme-form" onSubmit={submit}>
@@ -191,28 +199,88 @@ export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure
         <label><span>{dnsProvider === "manual" ? copy.manualZone : copy.zone}</span><input required value={zone} onChange={(e) => setZone(e.target.value)} placeholder="example.com" maxLength={253} autoCapitalize="none" spellCheck={false} /><p>{dnsProvider === "manual" ? copy.manualZoneHint : copy.zoneHint}</p></label>
         <label><span>{copy.domains}</span><textarea required value={domains} onChange={(e) => setDomains(e.target.value)} placeholder={"example.com\n*.example.com"} maxLength={6000} spellCheck={false} /><p>{copy.wildcardHint}</p></label>
         <label><span>{copy.environment}</span><select value={environment} onChange={(e) => setEnvironment(e.target.value)}><option value="staging">{copy.staging}</option><option value="production">{copy.production}</option></select><p>{copy.stagingHint}</p></label>
-        {dnsProvider === "aliyun" && <label className="acme-check"><input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} /><span>{copy.autoRenew}<small>{copy.renewHint}</small></span></label>}
+        {dnsProvider === "aliyun" && <p>{copy.renewInDetails}</p>}
         <div className="security-note"><ShieldCheck size={17} /><span>{copy.deployHint}</span></div>
         <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{common.cancel}</button><button className="primary-button" disabled={!configured || !groupId || (dnsProvider === "aliyun" && !credentials.some((item) => item.id === credentialId)) || busy}>{busy && <RefreshCw size={15} className="spinning" />}{dnsProvider === "manual" ? copy.manualGenerate : copy.submit}</button></div>
       </form> : <div className="acme-order-list">
-        {queued && <div className="acme-notice success">{queued === "manual" ? copy.manualQueued : copy.queuedHint}</div>}
+        {completed?.certificateId && <div className="acme-notice success" role="status"><p>{completed.name} · {copy.issuedMoved}</p><button className="secondary-button" onClick={() => onOpenCertificate(completed.certificateId!)}>{copy.viewCertificate}</button></div>}
+        <p>{copy.pendingHint}</p>
         {!orders.length && <div className="empty-state"><FileKey2 size={28} /><h3>{copy.empty}</h3><button className="primary-button" onClick={() => setTab("new")}>{copy.newOrder}</button></div>}
-        {orders.map((order) => <article key={order.id} className="acme-order">
-          <div className="acme-order-heading"><strong>{order.name}</strong><span className={`acme-state ${order.status}`}>{copy[order.status]}</span></div>
-          <p className="acme-domains">{order.domains.join(" · ")}</p>
-          <div className="acme-order-meta"><span className={order.environment === "staging" ? "acme-staging" : ""}>{copy[order.environment]}</span><span>{groups.find((g) => g.id === order.groupId)?.name || "—"}</span>{order.expiresAt && <span>{common.expiryDate}: {new Date(order.expiresAt).toLocaleDateString(language)}</span>}</div>
-          <p className="acme-bound-credential">{order.dnsProvider === "manual" ? copy.manualMode : `${copy.credentialName}: ${order.credentialName || copy.CREDENTIAL_REQUIRED}`}</p>
-          {order.status === "running" && <p aria-live="polite"><RefreshCw size={12} className="spinning" /> {copy[order.stage as keyof typeof copy] || copy.running}</p>}
-          {order.lastError && <div className="acme-notice error">{errorText(new Error(order.lastError), language)}{order.autoRenew && order.certificateId && <p>{copy.nextRetry}: {new Date(order.nextAttemptAt).toLocaleString(language)}</p>}</div>}
-          {order.dnsProvider === "manual" && <ManualDnsDetails order={order} language={language} busy={busy} onAction={(action) => void change(order, action)} />}
-          <div className="acme-order-actions">{order.dnsProvider === "aliyun" ? <label className="acme-check"><input type="checkbox" checked={order.autoRenew} disabled={busy} onChange={() => void change(order, "autoRenew")} /><span>{copy.autoRenew}</span></label> : <span>{copy.MANUAL_DNS_ONLY}</span>}
-            <div><button className="secondary-button" disabled={busy || !["issued", "failed"].includes(order.status)} onClick={() => void change(order, "renew")}><RefreshCw size={13} />{copy.renew}</button>
-              {!order.certificateId && order.status !== "running" && <button className="ghost-button" disabled={busy} onClick={() => void change(order, "remove")}>{copy.remove}</button>}</div></div>
-        </article>)}
+        {orders.map((order) => <AcmeOrderCard key={order.id} order={order} language={language} groupName={groups.find((g) => g.id === order.groupId)?.name} busy={busy} onAction={(action) => void change(order, action)} />)}
+        {pagination.pages > 1 && <nav className="acme-pagination" aria-label={copy.orders}><button className="secondary-button" disabled={busy || pagination.page <= 1} onClick={() => setPage(pagination.page - 1)}>{copy.previousPage}</button><span>{pagination.page} / {pagination.pages}</span><button className="secondary-button" disabled={busy || pagination.page >= pagination.pages} onClick={() => setPage(pagination.page + 1)}>{copy.nextPage}</button></nav>}
         <p>{copy.deployHint}</p>
       </div>}
     </div>
   </div>;
+}
+
+type OrderAction = "renew" | "autoRenew" | "remove" | "checkDns" | "continue";
+
+function AcmeOrderCard({ order, language, groupName, busy, onAction, renewal = false }: {
+  order: AcmeOrder; language: Language; groupName?: string; busy: boolean; onAction: (action: OrderAction) => void; renewal?: boolean;
+}) {
+  const copy = acmeMessages(language);
+  const manualDetails = <ManualDnsDetails order={order} language={language} busy={busy} onAction={onAction} />;
+  return <article className="acme-order">
+    <div className="acme-order-heading"><strong>{renewal ? "Let’s Encrypt" : order.name}</strong><span className={`acme-state ${order.status}`}>{copy[order.status]}</span></div>
+    {!renewal && <p className="acme-domains">{order.domains.join(" · ")}</p>}
+    <div className="acme-order-meta"><span className={order.environment === "staging" ? "acme-staging" : ""}>{copy[order.environment]}</span>{groupName && <span>{groupName}</span>}</div>
+    <p className="acme-bound-credential">{order.dnsProvider === "manual" ? copy.manualMode : `${copy.credentialName}: ${order.credentialName || copy.CREDENTIAL_REQUIRED}`}</p>
+    {order.status === "queued" && <p role="status">{order.dnsProvider === "manual" && !order.manualExpiresAt ? copy.manualQueued : copy.queuedHint}</p>}
+    {order.status === "running" && <p role="status"><RefreshCw size={12} className="spinning" /> {copy[order.stage as keyof typeof copy] || copy.running}</p>}
+    {order.lastError && <div className="acme-notice error">{errorText(new Error(order.lastError), language)}{order.autoRenew && order.certificateId && <p>{copy.nextRetry}: {new Date(order.nextAttemptAt).toLocaleString(language)}</p>}</div>}
+    {order.dnsProvider === "manual" && (order.status === "issued" ? order.manualRecords.length > 0 && <details className="acme-previous-dns"><summary>{copy.previousDns}</summary>{manualDetails}</details> : manualDetails)}
+    {renewal && <div className="acme-renew-settings">{order.dnsProvider === "aliyun" ? <label className="acme-check"><input type="checkbox" checked={order.autoRenew} disabled={busy} onChange={() => onAction("autoRenew")} /><span>{copy.autoRenew}<small>{copy.renewHint}</small></span></label> : <p>{copy.MANUAL_DNS_ONLY}</p>}</div>}
+    <div className="acme-order-actions">
+      {["issued", "failed"].includes(order.status) && <button className="secondary-button" disabled={busy} onClick={() => onAction("renew")}><RefreshCw size={13} />{order.status === "failed" ? copy.retryIssuance : copy.renew}</button>}
+      {!renewal && !order.certificateId && order.status !== "running" && <button className="ghost-button" disabled={busy} onClick={() => onAction("remove")}>{copy.remove}</button>}
+    </div>
+  </article>;
+}
+
+export function CertificateAcmePanel({ language, certificateId, onIssued }: { language: Language; certificateId: string; onIssued: () => void }) {
+  const copy = acmeMessages(language);
+  const [order, setOrder] = useState<AcmeOrder | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [pendingCleanup, setPendingCleanup] = useState(0);
+  const issuedAt = useRef<string | null | undefined>(undefined);
+  const onIssuedRef = useRef(onIssued);
+  useEffect(() => { onIssuedRef.current = onIssued; }, [onIssued]);
+  const refresh = useCallback(async () => {
+    const result = await api(`/api/acme/orders?certificateId=${certificateId}`);
+    const next: AcmeOrder | null = result.data[0] || null;
+    if (next?.lastIssuedAt && issuedAt.current !== next.lastIssuedAt) onIssuedRef.current();
+    issuedAt.current = next?.lastIssuedAt ?? null;
+    setOrder(next); setPendingCleanup(result.pendingCleanup);
+  }, [certificateId]);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try { if (active) await refresh(); }
+      catch (error) { if (active) setError(error); }
+      finally { if (active) setLoading(false); }
+    };
+    void load();
+    const timer = setInterval(() => { if (!document.hidden) void load(); }, 5000);
+    return () => { active = false; clearInterval(timer); };
+  }, [refresh]);
+  async function change(action: OrderAction) {
+    if (!order || action === "remove") return;
+    if (action === "renew" && !window.confirm(order.dnsProvider === "manual" ? copy.manualRetryConfirm : copy.renewConfirm)) return;
+    setBusy(true); setError(null);
+    try {
+      await api("/api/acme/orders", { id: order.id, action, autoRenew: !order.autoRenew }, "PATCH");
+      await refresh();
+    } catch (error) { setError(error); } finally { setBusy(false); }
+  }
+  return <section className="detail-section certificate-acme-panel" aria-label={copy.renewalTitle}>
+    <h3>{copy.renewalTitle}</h3>
+    {error != null && <div className="acme-notice error" role="alert">{errorText(error, language)}</div>}
+    {pendingCleanup > 0 && <div className="acme-notice">{copy.cleanup}</div>}
+    {loading ? <p>{messages[language].loadingContent}</p> : order ? <><AcmeOrderCard order={order} language={language} busy={busy} renewal onAction={(action) => void change(action)} /><p>{copy.deployHint}</p></> : error == null && <p>{copy.noLinkedOrder}</p>}
+  </section>;
 }
 
 function ManualDnsDetails({ order, language, busy, onAction }: { order: AcmeOrder; language: Language; busy: boolean; onAction: (action: "checkDns" | "continue") => void }) {
@@ -225,7 +293,7 @@ function ManualDnsDetails({ order, language, busy, onAction }: { order: AcmeOrde
   const checkedRecently = Boolean(order.dnsCheckedAt && now - Date.parse(order.dnsCheckedAt) <= 10 * 60_000);
   const actionable = ["waiting_dns", "dns_ready", "failed"].includes(order.status) && Boolean(order.manualExpiresAt) && !expired && order.lastError !== "MANUAL_EXPIRED";
   async function copyValue(value: string) {
-    try { await navigator.clipboard.writeText(value); setCopied(value); setCopyFailed(false); }
+    try { await copyText(value); setCopied(value); setCopyFailed(false); }
     catch { setCopyFailed(true); }
   }
   if (!order.manualExpiresAt) return null;

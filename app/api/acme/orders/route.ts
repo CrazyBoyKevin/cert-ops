@@ -1,13 +1,13 @@
 import { requireApiSession } from "@/lib/auth";
 import { listAcmeOrders, queueAcmeOrder, changeAcmeOrder, removeAcmeOrder } from "@/lib/acme-store";
-import { validateId, AcmeError } from "@/lib/acme-validation";
+import { validateId, parseOrderQuery, AcmeError } from "@/lib/acme-validation";
 import { acmeResponse, acmeApiError, acmeBody } from "@/lib/acme-api";
 import { runManualAction } from "@/lib/acme-manual";
 
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   const unauthorized = requireApiSession(request); if (unauthorized) return unauthorized;
-  try { return acmeResponse(await listAcmeOrders()); } catch (error) { return acmeApiError(error); }
+  try { return acmeResponse(await listAcmeOrders(parseOrderQuery(new URL(request.url).searchParams))); } catch (error) { return acmeApiError(error); }
 }
 export async function POST(request: Request) {
   const unauthorized = requireApiSession(request); if (unauthorized) return unauthorized;

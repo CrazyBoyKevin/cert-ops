@@ -4,7 +4,7 @@ import path from "node:path";
 import type { PoolClient } from "pg";
 import { withPostgres } from "./repository.ts";
 import { decryptSecret, encryptSecret } from "./crypto-store.ts";
-import { AcmeError, validateOrder } from "./acme-validation.ts";
+import { AcmeError, validateOrder, type OrderQuery } from "./acme-validation.ts";
 import type { AcmeSettings, AcmeOrder, PublicAcmeSettings, PublicAliyunCredential } from "./acme-types";
 import { migrateLegacyCredentials, listAliyunCredentials, readAliyunCredential } from "./aliyun-credentials.ts";
 import { parseCertificate } from "./certificate.ts";
@@ -79,13 +79,24 @@ export function mapOrder(row: Record<string, unknown>): AcmeOrder {
     status: row.status as AcmeOrder["status"], stage: String(row.stage), lastError: row.last_error ? String(row.last_error) : null,
     nextAttemptAt: date("next_attempt_at")!, expiresAt: date("expires_at"), lastIssuedAt: date("last_issued_at") };
 }
-export async function listAcmeOrders() {
+export async function listAcmeOrders(query: OrderQuery = {}) {
   return withAcmeDb(async (db) => {
+    // A failed renewal still belongs to its certificate, never the new-request inbox.
+    const where = query.scope === "pending" ? "o.certificate_id IS NULL" : query.certificateId ? "o.certificate_id=$1" : query.id ? "o.id=$1" : "TRUE";
+    const values = query.certificateId ? [query.certificateId] : query.id ? [query.id] : [];
+    const count = await db.query(`SELECT COUNT(*)::int AS total FROM cert_ops.acme_orders o WHERE ${where}`, values);
+    const total = count.rows[0].total as number;
+    const pages = Math.max(1, Math.ceil(total / 10));
+    const page = Math.max(1, Math.min(query.page || 1, pages));
+    const pagination = query.scope === "pending" ? " LIMIT $1 OFFSET $2" : "";
+    const bindings: (string | number)[] = query.scope === "pending" ? [10, (page - 1) * 10] : values;
     const result = await db.query(`SELECT o.*, c.expires_at, c.name AS certificate_name, c.group_id AS current_group_id, a.name AS credential_name
       FROM cert_ops.acme_orders o LEFT JOIN cert_ops.certificates c ON c.id=o.certificate_id
-      LEFT JOIN cert_ops.aliyun_credentials a ON a.id=o.credential_id ORDER BY o.created_at DESC`);
+      LEFT JOIN cert_ops.aliyun_credentials a ON a.id=o.credential_id WHERE ${where}
+      ORDER BY o.created_at DESC, o.id DESC${pagination}`, bindings);
+    // Cleanup can outlive its certificate and blocks the worker globally.
     const cleanup = await db.query("SELECT COUNT(*)::int AS count FROM cert_ops.acme_dns_records");
-    return { data: result.rows.map(mapOrder), pendingCleanup: cleanup.rows[0].count };
+    return { data: result.rows.map(mapOrder), pendingCleanup: cleanup.rows[0].count, total, page, pages: query.scope === "pending" ? pages : 1 };
   });
 }
 export async function queueAcmeOrder(input: Record<string, unknown>) {

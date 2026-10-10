@@ -368,6 +368,16 @@ input:focus, select:focus, textarea:focus { border-color: #9da6f3; outline: 0; b
 .acme-staging { color: #9e6a20; font-weight: 600; }
 .acme-order-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 13px; margin-top: 12px; border-top: 1px solid #edf0f4; }
 .acme-order-actions > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.acme-order-actions:empty { display: none; }
+.acme-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; font-size: 12px; color: #788397; }
+.certificate-acme-panel p { font-size: 11px; line-height: 1.7; color: #788397; overflow-wrap: anywhere; margin: 10px 0; }
+.certificate-acme-panel .acme-order { padding: 14px; }
+.certificate-acme-panel .acme-check { font-size: 12px; }
+.certificate-acme-panel .acme-check small { font-size: 11px; }
+.certificate-acme-panel .acme-order-heading { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+.acme-renew-settings { margin-top: 14px; }
+.acme-previous-dns { margin-top: 14px; border-top: 1px solid #edf0f4; padding-top: 12px; }
+.acme-previous-dns summary { cursor: pointer; font-size: 11px; font-weight: 500; color: #69748a; }
 .acme-state.waiting_dns { color: #916a23; background: #fff7e6; }
 .acme-state.dns_ready { color: #267357; background: #edf9f2; }
 .manual-dns-details { margin-top: 14px; border-top: 1px solid #edf0f4; padding-top: 14px; min-width: 0; }
