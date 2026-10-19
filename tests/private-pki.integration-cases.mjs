@@ -122,7 +122,8 @@ export async function privatePkiCases({ api, base, cookie, pool, groupId, scratc
     await deleteLock.query("SELECT pg_advisory_lock(194827,50)");
     assert.equal((await api(route, "POST", removeRoot(otherRoot.id), 400)).error, "BUSY");
   } finally { await deleteLock.query("SELECT pg_advisory_unlock(194827,50)"); deleteLock.release(); }
-  const deletionGroup = (await api("/api/groups", "POST", { name: "Deletion guard project" }, 201)).data;
+  const deletionGroup = (await api("/api/groups", "POST", { name: `Deletion guard ${randomUUID()}` }, 201)).data;
+  assert.equal((await pool.query("SELECT COUNT(*)::int AS n FROM cert_ops.groups WHERE id=$1", [deletionGroup.id])).rows[0].n, 1);
   const guardedService = (await api(route, "POST", { ...leafInput, authorityId: otherRoot.id, groupId: deletionGroup.id }, 201)).data.certificateId;
   await pool.query("UPDATE cert_ops.certificates SET expires_at=NOW()-INTERVAL '1 day' WHERE id=$1", [guardedService]);
   assert.equal((await api(route, "POST", removeRoot(otherRoot.id), 400)).error, "CA_IN_USE");
@@ -135,6 +136,7 @@ export async function privatePkiCases({ api, base, cookie, pool, groupId, scratc
   assert.equal((await pool.query("SELECT COUNT(*)::int AS n FROM cert_ops.private_authorities WHERE id=$1", [otherRoot.id])).rows[0].n, 0);
   assert.equal((await api(route, "POST", removeRoot(otherRoot.id), 400)).error, "NOT_FOUND");
   await api(route, "POST", { ...leafInput, authorityId: otherRoot.id }, 400);
+  await api("/api/groups", "DELETE", { id: deletionGroup.id });
   assert.ok((await api(route)).data.some(c => c.id === root.id));
   assert.equal((await api(`${route}?certificateId=${importedCertificateId}`)).data.versions.length, 1);
   // Leave an unused root for non-destructive browser confirmation/cancellation QA.
