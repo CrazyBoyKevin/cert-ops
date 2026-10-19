@@ -1,4 +1,6 @@
 import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
+import { isIP } from "node:net";
+import { canonicalAddress } from "./ip-address.ts";
 
 function valueFromDn(dn: string, key: string) {
   return dn
@@ -11,10 +13,10 @@ function valueFromDn(dn: string, key: string) {
 function parseDomains(x509: X509Certificate) {
   const domains = (x509.subjectAltName || "")
     .split(/,\s*/)
-    .filter((item) => item.startsWith("DNS:"))
-    .map((item) => item.slice(4).trim());
+    .filter((item) => item.startsWith("DNS:") || item.startsWith("IP Address:"))
+    .map((item) => canonicalAddress(item.replace(/^(DNS:|IP Address:)/, "").trim()));
   const commonName = valueFromDn(x509.subject, "CN");
-  if (commonName && !domains.includes(commonName)) domains.unshift(commonName);
+  if (commonName && !domains.includes(commonName) && (!isIP(commonName) || !domains.length)) domains.unshift(commonName);
   return [...new Set(domains)];
 }
 

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { AlertCircle, LoaderCircle, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { safeReturnHref } from "@/lib/app-route";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function LoginForm() {
         setError(json.error || "登录失败，请稍后重试");
         return;
       }
-      router.replace("/");
+      router.replace(safeReturnHref(new URLSearchParams(window.location.search).get("next")));
       router.refresh();
     } catch {
       setError("无法连接到 CertOps，请检查网络后重试");

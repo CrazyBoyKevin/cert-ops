@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS cert_ops.certificates (
 
 CREATE INDEX IF NOT EXISTS certificates_expires_at_idx ON cert_ops.certificates(expires_at);
 CREATE INDEX IF NOT EXISTS certificates_group_id_idx ON cert_ops.certificates(group_id);
+ALTER TABLE cert_ops.certificates ADD COLUMN IF NOT EXISTS private_ca BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cert_ops.certificates ADD COLUMN IF NOT EXISTS private_authority_id UUID;
 
 CREATE TABLE IF NOT EXISTS cert_ops.notification_settings (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),

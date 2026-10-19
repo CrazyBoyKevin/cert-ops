@@ -7,10 +7,11 @@ import { acmeMessages } from "@/lib/acme-i18n";
 import type { AcmeOrder, PublicAcmeSettings, PublicAliyunCredential } from "@/lib/acme-types";
 import type { Group } from "@/lib/types";
 import { copyText } from "@/lib/clipboard";
+import { loginHref } from "@/lib/app-route";
 
 async function api(url: string, body?: unknown, method = "POST") {
   const response = await fetch(url, { cache: "no-store", ...(body ? { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
-  if (response.status === 401) { window.location.replace("/login"); throw new Error("UNAUTHORIZED"); }
+  if (response.status === 401) { window.location.replace(loginHref(window.location.pathname + window.location.search)); throw new Error("UNAUTHORIZED"); }
   const json = await response.json();
   if (!response.ok) throw new Error(json.error || "SERVICE_UNAVAILABLE");
   return json;

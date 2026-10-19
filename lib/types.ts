@@ -16,6 +16,8 @@ export type Certificate = {
   groupColor?: string;
   createdAt: string;
   hasPrivateKey: boolean;
+  privateCa?: boolean;
+  privateAuthorityId?: string;
 };
 
 export type NotificationSettings = {

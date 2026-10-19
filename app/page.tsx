@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { appRouteHref, readAppRoute, loginHref, type AppRoute, type SettingsTab } from "@/lib/app-route";
 import {
-  AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Database, Download, Eye, EyeOff, FileKey2,
-  Folder, FolderPlus, Languages, LockKeyhole, LogOut, Mail, MessageSquare, Pencil, Plus,
+  AlertTriangle, BellRing, Check, CheckCircle2, ChevronRight, Copy, Download, Eye, EyeOff, FileKey2,
+  Folder, FolderPlus, LockKeyhole, LogOut, Mail, MessageSquare, Pencil, Plus,
   RefreshCw, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Trash2, UploadCloud,
   WifiOff, X,
 } from "lucide-react";
 import { LANGUAGES, messages, type Language, type Messages } from "@/lib/i18n";
 import type { Certificate, Group, NotificationSettings, StorageMode } from "@/lib/types";
 import { AcmeModal, AcmeSettingsPanel, CertificateAcmePanel } from "./acme-panel";
+import { PrivateCaSettings, PrivateIssueModal, PrivateCertificatePanel, PrivateImportModal, type Authority } from "./private-pki-panel";
+import { certificateMetrics, certificateWorkspaceScope, certificatesInProject, certificatesInScope, type CertificateScope } from "@/lib/certificate-scope";
+import { navigationMessages } from "@/lib/navigation-i18n";
+import { pkiManagementMessages } from "@/lib/pki-management-i18n";
+import { pkiMessages } from "@/lib/private-pki-i18n";
+import { canonicalAddress } from "@/lib/ip-address";
 import { acmeMessages } from "@/lib/acme-i18n";
 import { certificateExportNames, type CertificateExportContents } from "@/lib/certificate-export";
 import { copyText } from "@/lib/clipboard";
+import { Brand } from "./brand";
+import { LanguageSwitcher } from "./language-switcher";
 
 const EMPTY_SETTINGS: NotificationSettings = {
   dingtalkEnabled: false, dingtalkWebhook: "", dingtalkSecret: "", feishuEnabled: false, feishuWebhook: "", feishuSecret: "",
@@ -23,7 +33,7 @@ const EMPTY_SETTINGS: NotificationSettings = {
 async function authenticatedFetch(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
   if (response.status === 401) {
-    window.location.replace("/login");
+    window.location.replace(loginHref(window.location.pathname + window.location.search));
     throw new Error("UNAUTHORIZED");
   }
   return response;
@@ -54,18 +64,25 @@ function formatDate(date: string, language: Language) {
 }
 
 export default function Home() {
+  return <Suspense fallback={<main className="login-shell"><span role="status">CertOps · Loading…</span></main>}><Workspace /></Suspense>;
+}
+
+function Workspace() {
+  const router = useRouter(), searchParams = useSearchParams(), pathname = usePathname();
+  const route = readAppRoute(searchParams, pathname);
+  const groupFilter = route.project, certificateScope = route.type, privateView = route.view, authorityFilter = route.ca, statusFilter = route.status;
+  const settingsOpen = route.settings !== null;
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [storage, setStorage] = useState<StorageMode>("demo");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [acmeOpen, setAcmeOpen] = useState(false);
-  const [settingsInitialAcme, setSettingsInitialAcme] = useState(false);
-  const [detailTarget, setDetailTarget] = useState<Certificate | null>(null);
+  const [privateIssueOpen, setPrivateIssueOpen] = useState(false);
+  const [privateImportOpen, setPrivateImportOpen] = useState(false);
+  const [authorities, setAuthorities] = useState<Authority[]>([]);
+  const detailTarget = certificates.find(certificate => certificate.id === route.certificate) || null;
   const [editTarget, setEditTarget] = useState<Certificate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Certificate | null>(null);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
@@ -78,6 +95,48 @@ export default function Home() {
   const [currentUsername, setCurrentUsername] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const copy = messages[language];
+  const management = pkiManagementMessages(language);
+  const navigation = navigationMessages(language);
+  const scopeTitle = certificateScope === "private" ? management.privateArea : management.publicArea;
+  const workspaceScope = certificateWorkspaceScope(groupFilter, groups.map(group => group.id), certificateScope, authorityFilter);
+  const needsProject = workspaceScope === "none";
+  const projectTitle = workspaceScope === "authority" ? navigation.caServices : groups.find(group => group.id === groupFilter)?.name || navigation.chooseProject;
+  const projectCertificates = useMemo(() => certificatesInProject(certificates, groupFilter), [certificates, groupFilter]);
+  const scopeCertificates = useMemo(() => certificatesInScope(projectCertificates, certificateScope, authorityFilter), [projectCertificates, certificateScope, authorityFilter]);
+  const publicCount = certificatesInScope(projectCertificates, "public").length;
+  const privateCount = certificatesInScope(projectCertificates, "private").length;
+
+  function navigate(patch: Partial<AppRoute>, replace = false) {
+    const href = appRouteHref({ ...route, ...patch });
+    if (href === appRouteHref(route)) return;
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: false });
+  }
+  function setDetailTarget(certificate: Certificate | null) { navigate({ certificate: certificate?.id || null, settings: null }); }
+  function setAuthorityFilter(ca: string) { navigate({ ca, certificate: null }); }
+  function setPrivateView(view: AppRoute["view"]) { navigate({ view, certificate: null, settings: null }); setSearch(""); }
+  function setStatusFilter(status: string) { navigate({ status: status as AppRoute["status"] }); }
+
+  function changeScope(scope: CertificateScope) {
+    navigate({ type: scope, ca: "all", view: "services", certificate: null, settings: null, status: "all" }); setSearch("");
+  }
+  function changeProject(id: string) {
+    navigate({ project: id, view: "services", ca: "all", certificate: null, settings: null, status: "all" }); setSearch("");
+  }
+  useEffect(() => {
+    if (certificateScope !== "private" && privateView !== "roots") return;
+    let active = true;
+    authenticatedFetch("/api/private-pki", { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error();
+      const result = await response.json();
+      if (active) setAuthorities(result.data || []);
+      // Loading the PKI schema also backfills historical CA associations.
+      const certificatesResponse = await authenticatedFetch("/api/certificates", { cache: "no-store" });
+      const certificatesResult = await certificatesResponse.json();
+      if (active && certificatesResponse.ok) setCertificates(certificatesResult.data || []);
+    }).catch(() => { if (active) setToast({ type: "error", text: messages[language].operationFailed }); });
+    return () => { active = false; };
+  }, [certificateScope, privateView, privateIssueOpen, privateImportOpen, language]);
 
   async function loadData(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -87,7 +146,6 @@ export default function Home() {
       ]);
       const [certJson, groupJson, settingsJson] = await Promise.all([certResponse.json(), groupResponse.json(), settingsResponse.json()]);
       setCertificates(certJson.data || []);
-      setDetailTarget((current) => current ? certJson.data?.find((item: Certificate) => item.id === current.id) || null : null);
       setGroups(groupJson.data || []);
       setStorage(certJson.storage || groupJson.storage || "demo");
       setSettings({ ...EMPTY_SETTINGS, ...(settingsJson.data || {}) });
@@ -159,21 +217,15 @@ export default function Home() {
     }
   }
 
-  const filtered = useMemo(() => certificates.filter((certificate) => {
-    const query = search.toLowerCase().trim();
-    const matchesSearch = !query || certificate.primaryDomain.toLowerCase().includes(query) || certificate.name.toLowerCase().includes(query) || certificate.issuer.toLowerCase().includes(query);
-    const matchesGroup = groupFilter === "all" || certificate.groupId === groupFilter;
+  const filtered = useMemo(() => scopeCertificates.filter((certificate) => {
+    const query = canonicalAddress(search.toLowerCase().trim());
+    const matchesSearch = !query || certificate.domains.some(domain => domain.toLowerCase().includes(query)) || certificate.name.toLowerCase().includes(query) || certificate.issuer.toLowerCase().includes(query);
     const status = statusOf(certificate);
     const matchesStatus = statusFilter === "all" || (statusFilter === "expiring" && status.days >= 0 && status.days <= 30) || status.key === statusFilter;
-    return matchesSearch && matchesGroup && matchesStatus;
-  }), [certificates, groupFilter, search, statusFilter]);
+    return matchesSearch && matchesStatus;
+  }), [scopeCertificates, search, statusFilter]);
 
-  const metrics = useMemo(() => ({
-    total: certificates.length,
-    healthy: certificates.filter((certificate) => statusOf(certificate).key === "healthy").length,
-    expiring: certificates.filter((certificate) => { const days = daysUntil(certificate.expiresAt); return days >= 0 && days <= 30; }).length,
-    expired: certificates.filter((certificate) => daysUntil(certificate.expiresAt) < 0).length,
-  }), [certificates]);
+  const metrics = useMemo(() => certificateMetrics(projectCertificates), [projectCertificates]);
 
   async function handleDelete() {
     if (!deleteTarget || !deleteConfirmed) return;
@@ -210,57 +262,59 @@ export default function Home() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><ShieldCheck size={20} /></span><span>CertOps</span></div>
-        <div className="sidebar-section groups-primary">
+        <Brand />
+        <nav className="sidebar-section groups-primary project-navigation" aria-label={navigation.certificates}>
           <div className="section-label"><span>{copy.projectGroups}</span><button aria-label={copy.newGroup} onClick={() => setGroupOpen(true)}><Plus size={15} /></button></div>
-          <button className={`group-item ${groupFilter === "all" ? "selected" : ""}`} onClick={() => setGroupFilter("all")}>
-            <span className="group-icon all"><Folder size={15} /></span><span>{copy.allCertificates}</span><b>{certificates.length}</b>
-          </button>
           {groups.map((group) => (
-            <div key={group.id} className={`group-entry ${groupFilter === group.id ? "selected" : ""}`}>
-              <button className={`group-item ${groupFilter === group.id ? "selected" : ""}`} onClick={() => setGroupFilter(group.id)}>
-                <span className="group-dot" style={{ background: group.color }} /><span>{group.name}</span><b>{group.count ?? certificates.filter((item) => item.groupId === group.id).length}</b>
+            <div key={group.id} className={`group-entry ${!settingsOpen && privateView === "services" && groupFilter === group.id ? "selected" : ""}`}>
+              <button className={`group-item ${!settingsOpen && privateView === "services" && groupFilter === group.id ? "selected" : ""}`} aria-current={!settingsOpen && privateView === "services" && groupFilter === group.id ? "page" : undefined} title={group.name} aria-label={group.name} onClick={() => changeProject(group.id)}>
+                <span className="group-dot" style={{ background: group.color }} /><span>{group.name}</span><b>{certificatesInProject(certificates, group.id).length}</b>
               </button>
               <button className="group-rename" aria-label={`${copy.renameGroup} ${group.name}`} onClick={() => setGroupEditTarget(group)}><Pencil size={13} /></button>
             </div>
           ))}
-        </div>
+        </nav>
+        <nav className="authority-navigation" aria-label={navigation.infrastructure}>
+          <button className={`nav-item ${!settingsOpen && privateView === "roots" ? "active" : ""}`} aria-current={!settingsOpen && privateView === "roots" ? "page" : undefined} aria-label={management.roots} title={management.roots} onClick={() => setPrivateView("roots")}><ShieldCheck size={18} /><span>{management.roots}</span></button>
+        </nav>
         <div className="sidebar-bottom">
-          <button className="nav-item" onClick={() => { setSettingsInitialAcme(false); setSettingsOpen(true); }}><Settings size={18} /><span>{copy.systemSettings}</span></button>
+          <button className={`nav-item ${settingsOpen ? "active" : ""}`} aria-current={settingsOpen ? "page" : undefined} aria-label={copy.systemSettings} title={copy.systemSettings} onClick={() => navigate({ settings: "notifications", certificate: null })}><Settings size={18} /><span>{copy.systemSettings}</span></button>
           <div className="user-card"><span className="avatar">{(currentUsername[0] || "A").toUpperCase()}</span><span><strong>{currentUsername || copy.administrator}</strong><small>{copy.administrator}</small></span><button className="user-logout" aria-label={copy.logout} title={copy.logout} disabled={loggingOut} onClick={() => void handleLogout()}><LogOut size={16} /></button></div>
         </div>
       </aside>
 
       <main className="main-content">
+        {settingsOpen ? <>
+          <header className="topbar"><div className="page-context"><div className="breadcrumb"><span>{copy.systemSettings}</span><ChevronRight size={13} /><b>{route.settings === "acme" ? acmeMessages(language).settings : copy.notificationSettings}</b></div></div><LanguageSwitcher language={language} onChange={changeLanguage} /></header>
+          <div className="content-wrap settings-content">{loading ? <p role="status">{copy.loadingContent}</p> : <SystemSettingsPage tab={route.settings || "notifications"} setTab={settings => navigate({ settings })} copy={copy} language={language} settings={settings} setSettings={setSettings} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}</div>
+        </> : <>
         <header className="topbar">
-          <div><div className="breadcrumb"><span>{copy.workspace}</span><ChevronRight size={13} /><b>{copy.certManagement}</b></div><h1>{copy.certManagement}</h1></div>
-          <div className="top-actions">
+          <div className="page-context"><div className="breadcrumb"><span>{privateView === "roots" ? navigation.infrastructure : navigation.certificates}</span><ChevronRight size={13} /><b>{privateView === "roots" ? management.roots : projectTitle}</b>{privateView === "services" && !needsProject && <><ChevronRight size={13} /><span>{scopeTitle}</span></>}</div></div>
+          <div className="topbar-tools"><div className="top-actions scoped-actions">
             <button className="icon-button" aria-label={copy.refresh} onClick={() => void loadData(true)}><RefreshCw size={17} className={loading ? "spinning" : ""} /></button>
-            <button className="primary-button" onClick={() => setUploadOpen(true)}><Plus size={17} />{copy.uploadCertificate}</button>
-            <button className="secondary-button acme-launch" onClick={() => setAcmeOpen(true)}><FileKey2 size={17} />{acmeMessages(language).title}</button>
-          </div>
+            {privateView === "services" && workspaceScope === "project" && (certificateScope === "public" ? <><button className="secondary-button" onClick={() => setUploadOpen(true)}><UploadCloud size={17} />{copy.uploadCertificate}</button><button className="primary-button" onClick={() => setAcmeOpen(true)}><FileKey2 size={17} />{management.publicIssue}</button></> : <><button className="secondary-button" onClick={() => setPrivateImportOpen(true)}><UploadCloud size={17} />{management.importService}</button><button className="primary-button" onClick={() => setPrivateIssueOpen(true)}><ShieldCheck size={17} />{management.privateIssue}</button></>)}
+          </div><LanguageSwitcher language={language} onChange={changeLanguage} /></div>
         </header>
 
         <div className="content-wrap">
+          {privateView === "services" && workspaceScope === "project" && <section className="metric-grid" aria-label={copy.overviewLabel}>
+            <MetricCard label={copy.certTotal} value={metrics.total} note={navigation.currentRange} icon={<FileKey2 size={20} />} tone="indigo" />
+            <MetricCard label={copy.healthy} value={metrics.healthy} note={metrics.total ? `${copy.healthRate} ${Math.round(metrics.healthy / metrics.total * 100)}%` : copy.noCertificates} icon={<CheckCircle2 size={20} />} tone="green" />
+            <MetricCard label={copy.expiring30} value={metrics.expiring} note={metrics.expiring ? copy.renewSoon : copy.noRisk} icon={<AlertTriangle size={20} />} tone="amber" />
+            <MetricCard label={copy.expired} value={metrics.expired} note={metrics.expired ? copy.actNow : copy.noExpired} icon={<LockKeyhole size={20} />} tone="red" />
+          </section>}
+          {privateView === "services" && workspaceScope === "project" && <div className="project-scope-header"><div className="certificate-type-tabs" role="group" aria-label={copy.certManagement}><button aria-pressed={certificateScope === "public"} className={certificateScope === "public" ? "active" : ""} onClick={() => changeScope("public")}><FileKey2 size={16} />{management.publicArea}<span>{publicCount}</span></button><button aria-pressed={certificateScope === "private"} className={certificateScope === "private" ? "active" : ""} onClick={() => changeScope("private")}><ShieldCheck size={16} />{management.privateArea}<span>{privateCount}</span></button></div></div>}
           {storage === "demo" && (
             <div className="demo-banner"><WifiOff size={16} /><span><strong>{copy.demoMode}</strong> · {copy.demoNote}</span></div>
           )}
 
-          <section className="metric-grid" aria-label={copy.overviewLabel}>
-            <MetricCard label={copy.certTotal} value={metrics.total} note={`${groups.length} ${copy.projectsUnit}`} icon={<FileKey2 size={20} />} tone="indigo" />
-            <MetricCard label={copy.healthy} value={metrics.healthy} note={metrics.total ? `${copy.healthRate} ${Math.round(metrics.healthy / metrics.total * 100)}%` : copy.noCertificates} icon={<CheckCircle2 size={20} />} tone="green" />
-            <MetricCard label={copy.expiring30} value={metrics.expiring} note={metrics.expiring ? copy.renewSoon : copy.noRisk} icon={<AlertTriangle size={20} />} tone="amber" />
-            <MetricCard label={copy.expired} value={metrics.expired} note={metrics.expired ? copy.actNow : copy.noExpired} icon={<LockKeyhole size={20} />} tone="red" />
-          </section>
+          {privateView === "roots" ? <section className="panel private-roots-panel"><PrivateCaSettings language={language} onChanged={() => void loadData()} onManage={id => { navigate({ project: "all", type: "private", ca: id, view: "services", status: "all", certificate: null }); setSearch(""); }} /></section> : needsProject ? <section className="panel empty-state"><Folder size={34} /><h2>{loading ? "…" : groups.length ? navigation.chooseProject : navigation.noGroups}</h2>{!loading && <><p>{groups.length ? navigation.chooseProjectHint : navigation.noGroupsHint}</p><button className="primary-button" onClick={() => setGroupOpen(true)}><Plus size={16} />{copy.newGroup}</button></>}</section> : <>{certificateScope === "private" && authorityFilter !== "all" && <div className="active-ca-filter"><ShieldCheck size={16} /><span>{pkiMessages(language).ca}: <strong>{authorities.find(root => root.id === authorityFilter)?.subject.CN || authorityFilter}</strong></span><button onClick={() => setAuthorityFilter("all")} aria-label={navigation.clearCa}>{navigation.clearCa}<X size={14} /></button></div>}
 
-          <section className="panel certificate-panel">
-            <div className="panel-heading">
-              <div><h2>{groupFilter === "all" ? copy.allCertificates : groups.find((group) => group.id === groupFilter)?.name}</h2><p>{copy.listSubtitle}</p></div>
-              <span className={`storage-pill ${storage}`}><Database size={13} />{storage === "postgresql" ? copy.pgConnected : copy.demoData}</span>
-            </div>
+          <section className="panel certificate-panel" aria-label={scopeTitle}>
             <div className="toolbar">
               <label className="search-box"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.searchPlaceholder} /></label>
               <div className="toolbar-actions">
+                {certificateScope === "private" && <label className="select-box"><ShieldCheck size={15} /><select aria-label={pkiMessages(language).ca} value={authorityFilter} onChange={e => setAuthorityFilter(e.target.value)}><option value="all">{management.allRoots}</option>{authorities.map(root => <option value={root.id} key={root.id}>{root.subject.CN} · {root.id.slice(0, 8)}</option>)}</select></label>}
                 <label className="select-box"><SlidersHorizontal size={15} /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">{copy.allStatus}</option><option value="healthy">{copy.normalStatus}</option><option value="expiring">{copy.expiring30}</option><option value="expired">{copy.expired}</option></select></label>
                 <span className="result-count">{copy.itemsPrefix} {filtered.length} {copy.itemsSuffix}</span>
               </div>
@@ -283,21 +337,23 @@ export default function Home() {
                       </tr>
                     );
                   })}
-                  {!loading && !filtered.length && <tr><td colSpan={6}><div className="empty-state"><ShieldCheck size={34} /><h3>{copy.noResults}</h3><p>{copy.noResultsHint}</p><button className="primary-button" onClick={() => setUploadOpen(true)}><Plus size={16} />{copy.uploadCertificate}</button></div></td></tr>}
+                  {!loading && !filtered.length && <tr><td colSpan={6}><div className="empty-state"><ShieldCheck size={34} /><h3>{copy.noResults}</h3><p>{copy.noResultsHint}</p><button className="primary-button" onClick={() => certificateScope === "private" ? setPrivateImportOpen(true) : setUploadOpen(true)}><Plus size={16} />{certificateScope === "private" ? management.importService : copy.uploadCertificate}</button></div></td></tr>}
                 </tbody>
               </table>
             </div>
-          </section>
+          </section></>}
         </div>
+        </>}
       </main>
 
-      {uploadOpen && <UploadModal copy={copy} groups={groups} onClose={() => setUploadOpen(false)} onSuccess={(message) => { setUploadOpen(false); showToast("success", message); void loadData(); }} onError={(message) => showToast("error", message)} />}
-      {editTarget && <EditCertificateModal copy={copy} certificate={editTarget} groups={groups} onClose={() => setEditTarget(null)} onUpdated={(certificate) => { setEditTarget(null); setCertificates((items) => items.map((item) => item.id === certificate.id ? certificate : item)); setDetailTarget((current) => current?.id === certificate.id ? certificate : current); showToast("success", copy.updated); void loadData(); }} onError={(message) => showToast("error", message)} />}
-      {acmeOpen && <AcmeModal language={language} groups={groups} initialGroup={groupFilter} onClose={() => { setAcmeOpen(false); void loadData(); }} onOpenCertificate={(id) => { void loadData().then((items) => { const certificate = items?.find((item) => item.id === id); if (certificate) { setAcmeOpen(false); setDetailTarget(certificate); } }); }} onConfigure={() => { setAcmeOpen(false); setSettingsInitialAcme(true); setSettingsOpen(true); }} />}
-      {settingsOpen && <SystemSettingsModal initialAcme={settingsInitialAcme} copy={copy} language={language} onLanguageChange={changeLanguage} settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}
-      {groupOpen && <GroupModal copy={copy} onClose={() => setGroupOpen(false)} onCreated={(group) => { setGroupOpen(false); setGroups((items) => [...items, group]); setGroupFilter(group.id); showToast("success", copy.groupCreated); }} onError={(message) => showToast("error", message)} />}
-      {groupEditTarget && <EditGroupModal copy={copy} group={groupEditTarget} onClose={() => setGroupEditTarget(null)} onDelete={() => { setGroupDeleteTarget(groupEditTarget); setGroupEditTarget(null); }} onUpdated={(group) => { setGroupEditTarget(null); setGroups((items) => items.map((item) => item.id === group.id ? { ...item, ...group } : item)); setCertificates((items) => items.map((item) => item.groupId === group.id ? { ...item, groupName: group.name } : item)); setDetailTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); setEditTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); showToast("success", copy.groupUpdated); }} onError={(message) => showToast("error", message)} />}
-      {groupDeleteTarget && <DeleteGroupModal copy={copy} group={groupDeleteTarget} onClose={() => setGroupDeleteTarget(null)} onDeleted={() => { const deletedId = groupDeleteTarget.id; setGroupDeleteTarget(null); setGroups((items) => items.filter((item) => item.id !== deletedId)); if (groupFilter === deletedId) setGroupFilter("all"); showToast("success", copy.groupDeleted); }} onError={(message) => showToast("error", message)} />}
+      {uploadOpen && <UploadModal copy={copy} groups={groups} initialGroup={groupFilter} onClose={() => setUploadOpen(false)} onSuccess={(message) => { setUploadOpen(false); showToast("success", message); void loadData(); }} onError={(message) => showToast("error", message)} />}
+      {editTarget && <EditCertificateModal copy={copy} certificate={editTarget} groups={groups} onClose={() => setEditTarget(null)} onUpdated={(certificate) => { setEditTarget(null); setCertificates((items) => items.map((item) => item.id === certificate.id ? certificate : item)); showToast("success", copy.updated); void loadData(); }} onError={(message) => showToast("error", message)} />}
+      {acmeOpen && <AcmeModal language={language} groups={groups} initialGroup={groupFilter} onClose={() => { setAcmeOpen(false); void loadData(); }} onOpenCertificate={(id) => { void loadData().then((items) => { const certificate = items?.find((item) => item.id === id); if (certificate) { setAcmeOpen(false); setDetailTarget(certificate); } }); }} onConfigure={() => { setAcmeOpen(false); navigate({ settings: "acme", certificate: null }); }} />}
+      {privateIssueOpen && <PrivateIssueModal language={language} groups={groups} initialGroup={groupFilter} initialAuthority={authorityFilter} onClose={() => setPrivateIssueOpen(false)} onConfigure={() => { setPrivateIssueOpen(false); setPrivateView("roots"); }} onIssued={(id) => { setPrivateIssueOpen(false); showToast("success", pkiMessages(language).issued); void loadData().then(items => { const certificate = items?.find(item => item.id === id); if (certificate) setDetailTarget(certificate); }); }} />}
+      {privateImportOpen && <PrivateImportModal language={language} groups={groups} initialGroup={groupFilter} initialAuthority={authorityFilter} onClose={() => setPrivateImportOpen(false)} onImported={id => { setPrivateImportOpen(false); showToast("success", management.imported); void loadData().then(items => { const certificate = items?.find(item => item.id === id); if (certificate) setDetailTarget(certificate); }); }} />}
+      {groupOpen && <GroupModal copy={copy} onClose={() => setGroupOpen(false)} onCreated={(group) => { setGroupOpen(false); setGroups((items) => [...items, group]); changeProject(group.id); showToast("success", copy.groupCreated); }} onError={(message) => showToast("error", message)} />}
+      {groupEditTarget && <EditGroupModal copy={copy} group={groupEditTarget} onClose={() => setGroupEditTarget(null)} onDelete={() => { setGroupDeleteTarget(groupEditTarget); setGroupEditTarget(null); }} onUpdated={(group) => { setGroupEditTarget(null); setGroups((items) => items.map((item) => item.id === group.id ? { ...item, ...group } : item)); setCertificates((items) => items.map((item) => item.groupId === group.id ? { ...item, groupName: group.name } : item)); setEditTarget((current) => current?.groupId === group.id ? { ...current, groupName: group.name } : current); showToast("success", copy.groupUpdated); }} onError={(message) => showToast("error", message)} />}
+      {groupDeleteTarget && <DeleteGroupModal copy={copy} group={groupDeleteTarget} onClose={() => setGroupDeleteTarget(null)} onDeleted={() => { const deletedId = groupDeleteTarget.id; setGroupDeleteTarget(null); setGroups((items) => items.filter((item) => item.id !== deletedId)); if (groupFilter === deletedId) navigate({ project: "all", ca: "all", certificate: null }, true); showToast("success", copy.groupDeleted); }} onError={(message) => showToast("error", message)} />}
       {detailTarget && <DetailDrawer key={`${detailTarget.id}:${detailTarget.fingerprint}`} copy={copy} language={language} certificate={detailTarget} onIssued={() => void loadData()} onClose={() => setDetailTarget(null)} onEdit={() => { setEditTarget(detailTarget); setDetailTarget(null); }} onDelete={() => { setDeleteTarget(detailTarget); setDeleteConfirmed(false); setDetailTarget(null); }} onToast={showToast} />}
 
       {deleteTarget && (
@@ -306,6 +362,7 @@ export default function Home() {
             <button className="modal-close" onClick={() => setDeleteTarget(null)}><X size={19} /></button>
             <span className="danger-icon"><Trash2 size={22} /></span><h2 id="delete-title">{copy.deleteTitle}</h2>
             <p>{copy.deleteWarning}</p>
+            {deleteTarget.privateCa && <p>{pkiMessages(language).deleteService}</p>}
             <div className="delete-cert"><ShieldCheck size={18} /><span><strong>{deleteTarget.primaryDomain}</strong><small>{deleteTarget.groupName} · {deleteTarget.issuer}</small></span></div>
             <label className="confirm-check"><input type="checkbox" checked={deleteConfirmed} onChange={(event) => setDeleteConfirmed(event.target.checked)} /><span className="fake-check"><Check size={13} /></span><span>{copy.deleteConfirm}</span></label>
             <div className="modal-actions"><button className="ghost-button" onClick={() => setDeleteTarget(null)}>{copy.cancel}</button><button className="danger-button" disabled={!deleteConfirmed} onClick={() => void handleDelete()}>{copy.confirmDelete}</button></div>
@@ -322,7 +379,7 @@ function MetricCard({ label, value, note, icon, tone }: { label: string; value: 
   return <div className="metric-card"><div><span>{label}</span><strong>{value}</strong><small>{note}</small></div><span className={`metric-icon ${tone}`}>{icon}</span></div>;
 }
 
-function UploadModal({ copy, groups, onClose, onSuccess, onError }: { copy: Messages; groups: Group[]; onClose: () => void; onSuccess: (message: string) => void; onError: (message: string) => void }) {
+function UploadModal({ copy, groups, initialGroup, onClose, onSuccess, onError }: { copy: Messages; groups: Group[]; initialGroup: string; onClose: () => void; onSuccess: (message: string) => void; onError: (message: string) => void }) {
   const [mode, setMode] = useState<"file" | "paste">("file");
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [privateKeyFile, setPrivateKeyFile] = useState<File | null>(null);
@@ -348,7 +405,7 @@ function UploadModal({ copy, groups, onClose, onSuccess, onError }: { copy: Mess
         <button type="button" className="modal-close" onClick={onClose}><X size={19} /></button>
         <div className="modal-title-row"><span className="title-icon"><UploadCloud size={20} /></span><div><h2>{copy.uploadTitle}</h2><p>{copy.uploadSubtitle}</p></div></div>
         <div className="mode-tabs"><button type="button" className={mode === "file" ? "active" : ""} onClick={() => setMode("file")}>{copy.fileUpload}</button><button type="button" className={mode === "paste" ? "active" : ""} onClick={() => setMode("paste")}>{copy.pasteContent}</button></div>
-        <div className="form-grid two"><label><span>{copy.certName} <em>{copy.optional}</em></span><input name="name" placeholder={copy.certNamePlaceholder} /></label><label><span>{copy.project} <b>*</b></span><select name="groupId" required defaultValue={groups[0]?.id || ""}><option value="" disabled>{copy.selectGroup}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label></div>
+        <div className="form-grid two"><label><span>{copy.certName} <em>{copy.optional}</em></span><input name="name" placeholder={copy.certNamePlaceholder} /></label><label><span>{copy.project} <b>*</b></span><select name="groupId" required defaultValue={groups.some(group => group.id === initialGroup) ? initialGroup : groups[0]?.id || ""}><option value="" disabled>{copy.selectGroup}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label></div>
         {mode === "file" ? (
           <div className="file-grid">
             <FileDrop label={copy.certFile} hint={copy.certFileHint} file={certificateFile} accept=".pem,.crt,.cer" required clickReplace={copy.clickReplace} onChange={setCertificateFile} />
@@ -395,21 +452,23 @@ function EditCertificateModal({ copy, certificate, groups, onClose, onUpdated, o
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal edit-cert-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><div className="modal-title-row"><span className="title-icon"><Pencil size={19} /></span><div><h2>{copy.editTitle}</h2><p>{copy.editDesc}</p></div></div><div className="edit-cert-domain"><ShieldCheck size={17} /><strong>{certificate.primaryDomain}</strong></div><label><span>{copy.certName} <b>*</b></span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={180} required /></label><label><span>{copy.project} <b>*</b></span><select value={groupId} onChange={(event) => setGroupId(event.target.value)} required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.saveChanges}</button></div></form></div>;
 }
 
-function SystemSettingsModal({ initialAcme, copy, language, onLanguageChange, settings, setSettings, onClose, onSave, onTest }: { initialAcme: boolean; copy: Messages; language: Language; onLanguageChange: (language: Language) => void; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onClose: () => void; onSave: () => void; onTest: () => void }) {
-  const [tab, setTab] = useState<"general" | "notifications" | "acme">(initialAcme ? "acme" : "general");
+function SystemSettingsPage({ tab, setTab, copy, language, settings, setSettings, onSave, onTest }: { tab: SettingsTab; setTab: (tab: SettingsTab) => void; copy: Messages; language: Language; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onSave: () => void; onTest: () => void }) {
   const update = <K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
+  function onTabKey(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next: SettingsTab = event.key === "Home" ? "notifications" : event.key === "End" ? "acme" : tab === "acme" ? "notifications" : "acme";
+    event.currentTarget.querySelector<HTMLButtonElement>(`#settings-tab-${next}`)?.focus();
+    setTab(next);
+  }
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal settings-modal system-settings-modal"><button className="modal-close" onClick={onClose}><X size={19} /></button>
-        <div className="modal-title-row"><span className="title-icon"><Settings size={20} /></span><div><h2>{copy.settingsTitle}</h2><p>{copy.settingsSubtitle}</p></div></div>
-        <div className="settings-tabs with-acme">
-          <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}><Languages size={16} />{copy.generalSettings}</button>
-          <button className={tab === "notifications" ? "active" : ""} onClick={() => setTab("notifications")}><BellRing size={16} />{copy.notificationSettings}</button>
-          <button className={tab === "acme" ? "active" : ""} onClick={() => setTab("acme")}><FileKey2 size={16} />{acmeMessages(language).settings}</button>
+    <section className="panel settings-page" aria-label={copy.systemSettings}>
+        <div className="settings-page-tabs" role="tablist" aria-label={copy.systemSettings} onKeyDown={onTabKey}>
+          <button id="settings-tab-notifications" role="tab" aria-selected={tab === "notifications"} aria-controls="settings-panel-notifications" tabIndex={tab === "notifications" ? 0 : -1} className={tab === "notifications" ? "active" : ""} onClick={() => setTab("notifications")}><BellRing size={17} />{copy.notificationSettings}</button>
+          <button id="settings-tab-acme" role="tab" aria-selected={tab === "acme"} aria-controls="settings-panel-acme" tabIndex={tab === "acme" ? 0 : -1} className={tab === "acme" ? "active" : ""} onClick={() => setTab("acme")}><FileKey2 size={17} />{acmeMessages(language).settings}</button>
         </div>
-        {tab === "general" ? (
-          <div className="settings-pane"><div className="settings-pane-heading"><h3>{copy.language}</h3><p>{copy.languageDesc}</p></div><div className="language-grid">{LANGUAGES.map((item) => <button key={item.code} className={language === item.code ? "active" : ""} onClick={() => onLanguageChange(item.code)}><span>{item.short}</span><strong>{item.label}</strong>{language === item.code && <Check size={16} />}</button>)}</div></div>
-        ) : tab === "acme" ? <AcmeSettingsPanel language={language} /> : (
+        <div id={`settings-panel-${tab}`} role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={0} className="settings-page-body">
+        {tab === "acme" ? <AcmeSettingsPanel language={language} /> : (
           <div className="settings-pane notification-pane">
             <div className="settings-pane-heading"><h3>{copy.notificationTitle}</h3><p>{copy.reminderDesc}</p></div>
             <div className="reminder-timeline"><span>{copy.early}</span>{[15, 7, 3, 1].map((day) => <b key={day}>{day}</b>)}<i /><span>{copy.expiryDay}</span></div>
@@ -422,9 +481,9 @@ function SystemSettingsModal({ initialAcme, copy, language, onLanguageChange, se
             </ChannelCard>
           </div>
         )}
-        <div className="modal-actions spread">{tab === "notifications" ? <><button className="secondary-button" onClick={onTest}><Send size={16} />{copy.sendTest}</button><span><button className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" onClick={onSave}>{copy.saveSettings}</button></span></> : <><span /><button className="primary-button" onClick={onClose}>{copy.done}</button></>}</div>
-      </div>
-    </div>
+        {tab === "notifications" && <div className="settings-page-actions"><button className="secondary-button" onClick={onTest}><Send size={16} />{copy.sendTest}</button><button className="primary-button" onClick={onSave}>{copy.saveSettings}</button></div>}
+        </div>
+    </section>
   );
 }
 
@@ -602,8 +661,8 @@ function DetailDrawer({ copy, language, certificate, onClose, onEdit, onDelete, 
         <button className="modal-close" onClick={onClose}><X size={19} /></button>
         <div className="drawer-hero"><span className="large-cert-icon"><ShieldCheck size={27} /></span><span className={`status-badge ${status.tone}`}><i />{statusLabel(certificate, copy)}</span><h2>{certificate.primaryDomain}</h2><p>{certificate.name}</p></div>
         <div className="detail-section"><h3>{copy.certInfo}</h3><DetailRow label={copy.issuer} value={certificate.issuer} /><DetailRow label={copy.project} value={certificate.groupName || "—"} /><DetailRow label={copy.algorithm} value={certificate.algorithm} /><DetailRow label={copy.validFrom} value={formatDate(certificate.validFrom, language)} /><DetailRow label={copy.expiryDate} value={formatDate(certificate.expiresAt, language)} /><DetailRow label={copy.privateKeyStatus} value={certificate.hasPrivateKey ? copy.keyStored : copy.keyMissing} /></div>
-        <CertificateAcmePanel language={language} certificateId={certificate.id} onIssued={onIssued} />
-        <div className="detail-section"><h3>{copy.domains}</h3><div className="domain-list">{certificate.domains.map((domain) => <span key={domain}>{domain}<button onClick={() => void copyValue(domain)} aria-label={`${copy.copyContent} ${domain}`}><Copy size={13} /></button></span>)}</div></div>
+        {certificate.privateCa ? <PrivateCertificatePanel language={language} certificate={certificate} onChanged={onIssued} /> : <CertificateAcmePanel language={language} certificateId={certificate.id} onIssued={onIssued} />}
+        <div className="detail-section"><h3>{certificate.privateCa ? pkiMessages(language).ips : copy.domains}</h3><div className="domain-list">{certificate.domains.map((domain) => <span key={domain}>{domain}<button onClick={() => void copyValue(domain)} aria-label={`${copy.copyContent} ${domain}`}><Copy size={13} /></button></span>)}</div></div>
         <div className="detail-section"><h3>{copy.fingerprint}</h3><button className="fingerprint" onClick={() => void copyValue(certificate.fingerprint)}><code>{certificate.fingerprint}</code><Copy size={14} /></button></div>
         <div className="detail-section certificate-material-section">
           <h3>{copy.certificateFiles}</h3>

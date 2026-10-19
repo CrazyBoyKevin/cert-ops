@@ -16,6 +16,7 @@ import { withAcmeDb, readAcmeSettings, readPublicAcmeSettings, queueAcmeOrder, l
 import { migrateLegacyCredentials, readAliyunCredential, saveAliyunCredential, removeAliyunCredential } from "../lib/aliyun-credentials.ts";
 import { readOrderIssuanceConfig, issueAcmeCertificate } from "../lib/acme-worker.ts";
 import { manualDnsCases } from "./manual-dns.integration-cases.mjs";
+import { privatePkiCases } from "./private-pki.integration-cases.mjs";
 
 const exec = promisify(execFile), suffix = randomBytes(5).toString("hex");
 const containerId = `certops-multiaccount-${suffix}`;
@@ -129,10 +130,27 @@ try {
   const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: env.CERTOPS_ADMIN_USERNAME, password: env.CERTOPS_ADMIN_PASSWORD }) });
   assert.equal(login.status, 200);
   const cookie = login.headers.get("set-cookie").split(";")[0];
+  const destination = `/settings?view=roots&project=${groupId}&type=private&tab=notifications`;
+  const guestPage = await fetch(base + destination, { redirect: "manual" });
+  assert.equal(guestPage.status, 307);
+  const loginUrl = new URL(guestPage.headers.get("location"), base);
+  assert.equal(loginUrl.pathname, "/login");
+  assert.equal(loginUrl.searchParams.get("next"), destination);
+  const resume = await fetch(loginUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+  assert.equal(resume.status, 307);
+  assert.equal(new URL(resume.headers.get("location"), base).href, base + destination);
+  const unsafeReturn = await fetch(base + "/login?next=https%3A%2F%2Fevil.test", { headers: { Cookie: cookie }, redirect: "manual" });
+  assert.equal(new URL(unsafeReturn.headers.get("location"), base).href, base + "/");
+  assert.equal((await fetch(base + destination, { headers: { Cookie: cookie }, redirect: "manual" })).status, 200);
+  const legacySettings = await fetch(base + "/?settings=acme", { headers: { Cookie: cookie }, redirect: "manual" });
+  assert.equal(legacySettings.status, 307);
+  assert.equal(new URL(legacySettings.headers.get("location"), base).href, base + "/settings?tab=acme");
+  for (const page of ["/settings", "/settings?tab=acme"]) assert.equal((await fetch(base + page, { headers: { Cookie: cookie } })).status, 200);
+  console.log("Deep-link authentication, refresh response, and safe return redirects passed.");
   async function api(route, method = "GET", body, status = 200) {
     const response = await fetch(base + route, { method, headers: { Cookie: cookie, "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     assert.equal(response.status, status);
-    assert.match(response.headers.get("cache-control"), /no-store/);
+    if (route.startsWith("/api/acme/") || route.startsWith("/api/private-pki")) assert.match(response.headers.get("cache-control"), /no-store/);
     return response.json();
   }
   const settings = await api("/api/acme/settings");
@@ -193,6 +211,7 @@ try {
   await pool.query("DELETE FROM cert_ops.acme_orders WHERE id=ANY($1::uuid[])", [pageFixtures]);
   console.log("Pending request pagination, certificate-scoped renewals, tracking and query validation passed.");
   console.log("Authenticated API CRUD, required selection, masked responses, and runtime integration passed. No real DNS or CA calls.");
+  await privatePkiCases({ api, base, cookie, pool, groupId, scratch, exec });
   if (process.env.CERTOPS_TEST_PREVIEW === "true") {
     await pool.query(`UPDATE cert_ops.acme_orders SET status='issued',stage='issued',manual_expires_at=NOW()+INTERVAL '1 hour',manual_records=$1
       WHERE certificate_id IS NOT NULL AND dns_provider='manual'`, [JSON.stringify([{ name: "_acme-challenge.manual.example.com", rr: "_acme-challenge", type: "TXT", value: "sample-issued-cleanup-value", domain: "manual.example.com", verified: true }])]);

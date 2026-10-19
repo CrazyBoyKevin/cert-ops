@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { privatePkiCases } from "./private-pki.integration-cases.mjs";
 
 const exec = promisify(execFile);
 const suffix = randomBytes(4).toString("hex");
@@ -51,6 +52,9 @@ try {
     const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: env.CERTOPS_ADMIN_USERNAME, password: env.CERTOPS_ADMIN_PASSWORD }) });
     assert.equal(login.status, 200);
     const cookie = login.headers.get("set-cookie").split(";")[0];
+    for (const page of ["/settings", "/settings?tab=acme", "/?view=roots"]) {
+      assert.equal((await fetch(base + page, { headers: { Cookie: cookie }, redirect: "manual" })).status, 200);
+    }
     async function api(route, body, method = "POST", expected = 200) {
       const response = await fetch(base + route, { headers: { Cookie: cookie, "Content-Type": "application/json" }, ...(body ? { method, body: JSON.stringify(body) } : {}) });
       const json = await response.json();
@@ -149,10 +153,23 @@ try {
     const renewal = (await api(`/api/acme/orders?certificateId=${manualIssued.certificateId}`)).data[0];
     assert.equal(renewal.status, "queued"); assert.equal(renewal.id, manual.id);
     await api("/api/certificates", { id: manualIssued.certificateId, confirmed: true }, "DELETE");
+    await privatePkiCases({
+      api: (route, method = "GET", body, expected = 200) => api(route, body, method, expected),
+      base, cookie, pool: globalThis.certOpsPool, groupId: groups[0].id, scratch, exec,
+    });
+    // Remove only this isolated database's private-PKI fixtures before testing the next platform.
+    for (const cert of (await api("/api/certificates")).data.filter(cert => cert.privateCa)) {
+      await api("/api/certificates", { id: cert.id, confirmed: true }, "DELETE");
+    }
+    for (const root of (await api("/api/private-pki")).data) {
+      await api("/api/private-pki", { action: "deleteCA", id: root.id, confirmed: true });
+    }
     const report = JSON.parse(await command("exec", appId, "node", "-e", 'const fs=require("fs"); console.log(JSON.stringify({version:require("./package.json").version,arch:process.arch,nodeEnv:process.env.NODE_ENV,localEnvIncluded:fs.existsSync(".env.local"),acmeSchema:fs.existsSync("db/acme.sql")}))'));
     assert.equal(report.version, version); assert.equal(report.nodeEnv, "production"); assert.equal(report.localEnvIncluded, false); assert.equal(report.acmeSchema, true);
     assert.equal(report.arch, arch === "amd64" ? "x64" : "arm64");
-    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", requestRenewalSeparation: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed" }));
+    await command("exec", appId, "openssl", "version");
+    await command("exec", appId, "test", "-f", "db/private-pki.sql");
+    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", requestRenewalSeparation: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed", privatePki: "passed", settingsRoutes: "passed" }));
     await command("stop", appId); active.splice(active.indexOf(appId), 1);
   }
   console.log("Release smoke tests passed for both platforms.");

@@ -212,6 +212,8 @@ function mapCertificate(row: Record<string, unknown>): Certificate {
     groupColor: String(row.group_color || "#94A3B8"),
     createdAt: new Date(String(row.created_at)).toISOString(),
     hasPrivateKey: Boolean(row.has_private_key),
+    privateCa: Boolean(row.private_ca),
+    privateAuthorityId: row.private_authority_id ? String(row.private_authority_id) : undefined,
   };
 }
 

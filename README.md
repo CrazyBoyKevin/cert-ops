@@ -2,7 +2,7 @@
 
 CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 证书的管理平台。
 
-当前版本：[`0.0.9`](https://hub.docker.com/r/easitwch/cert-ops/tags?name=0.0.9)，支持 `linux/amd64` 和 `linux/arm64`。`latest` 与当前发布版本指向同一份镜像。
+当前版本：[`0.0.10`](https://hub.docker.com/r/easitwch/cert-ops/tags?name=0.0.10)，支持 `linux/amd64` 和 `linux/arm64`。`latest` 与当前发布版本指向同一份镜像。
 
 ## 功能
 
@@ -24,17 +24,46 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 - 申请弹窗仅处理新申请、DNS 检查、签发与失败重试；未完成申请分页展示，签发后自动移出
 - 续签和自动续签开关统一位于证书详情；新申请默认关闭自动续签，已有设置保持不变。手动 DNS 的上次验证记录折叠保留，便于清理 TXT
 
+## 局域网 IP 证书（从 0.0.10 开始提供）
+
+从“证书签发”工具迁入私有 CA 与 IP 服务证书功能，使用 CertOps 的登录、PostgreSQL、加密存储、分组和到期提醒，不再需要单独运行 Python 服务。
+
+1. 左侧以项目分组为主导航，分组在公有、私有证书间共用，侧栏数量是两类证书总数。选中项目后，在内容区切换「公有证书 / 私有证书」，切换类型不会丢失项目选择；顶部统计合并当前项目的公有、私有证书，不随类型、CA、搜索或状态筛选变化；下方列表遵循这些筛选。公有区保留 Let’s Encrypt 与原有上传记录；这是管理分类，不代表对历史上传证书的公共信任认证。
+2. 左侧独立的「根 CA 管理」支持创建、导入多个 CA。CA 是跨项目资源，不属于某个分组；点击「查看跨项目服务证书」会转到「全部项目 → 私有证书」并显示可清除的 CA 筛选。选择其他项目会清除旧 CA 筛选，避免隐式漏掉证书。创建根 CA 时可填写名称、组织、部门、国家代码、省 / 州、城市及有效期，签名后不可修改。
+3. 点击「签发私有 IP 证书」，选择有私钥的 CA 和项目分组，填写服务名称以及 IPv4 / IPv6 地址。支持多个 IP，不支持协议、端口、网段或 IP 通配符。
+4. 在证书详情中续签、调整 IP、下载或删除历史版本。续签使用原 CA、生成新私钥，保留旧版本；不自动续期或部署。
+5. 导出仅包含 `.pem` 证书和 `.key` 服务私钥。根证书 `.crt` / `.cer` 单独下载，根私钥不提供网页导出。
+6. 删除版本需要确认未使用；删除当前版本会回退到剩余最新版本，删除最后一版则移除服务。主列表删除服务会连同所有历史版本一起删除。删除不是吊销，已部署副本不受影响。
+7. 根 CA 支持二次确认后删除；只要任何项目中仍有关联服务证书（包括已过期、无私钥及包含历史版本的服务），就禁止删除。页面展示关联数量，后端在事务中重新校验并保留数据库外键保护，不级联删除服务。删除会同时移除平台保存的根证书与根私钥，平台内不可恢复；请确认备份及未使用。平台之外的证书副本或系统信任不会因此撤销。
+
+私有 CA 不受浏览器默认信任，需在访问设备上手动安装并信任根证书；续签后需手动替换服务端证书与私钥、重载 Nginx 等服务。工具不修改系统信任，不提供 CRL / OCSP，不需要阿里云 AK / SK，也不调用公共 CA 或 DNS。
+
+要求可用 PostgreSQL、至少 32 字符且不是示例值的固定 `CERT_ENCRYPTION_KEY`。签发不会降级到演示存储。根私钥与所有历史私钥均加密保存在数据库；请同时安全备份数据库及加密密钥。服务证书最长 365 天，不能超过根 CA 剩余有效期。
+
+本地需安装 OpenSSL 1.1.1+ / 3.x；`0.0.10` 镜像已包含 OpenSSL 与此功能，`0.0.9` 及更早镜像不包含。数据库会增量创建 `private_authorities`、`private_services`、`private_versions` 表以及证书来源字段，不清空现有数据。此次仅迁移功能，没有复制原工具的 CA、服务证书、私钥或登录配置。
+
+### 导入已有根 CA 和服务证书
+
+- 根 CA 支持上传 PEM / CRT / CER（PEM 或 DER）文件或粘贴 PEM；只接受单张自签根 CA，验证 CA 属性和自签名，不把普通服务证书或中间 CA 当作根。
+- 根私钥可选。仅有根证书时可管理及导入它下面的服务证书，但不能签发或续签。再次导入同一根证书并附带匹配的未加密 PEM 私钥，可补充签发能力；按指纹去重，不重复建 CA，也不会因省略私钥而清除已有私钥。
+- 在「项目 → 私有证书 → 导入服务证书」选择根 CA 和分组，上传证书（或完整的叶证书在前的中间证书链），服务私钥可选。上传、导入和申请默认选中当前项目。服务证书可绑定 IP 或域名；当前在线签发/续签仍只支持 IP，含域名的服务可导入、管理及下载。
+- 导入会验证整条链的签名、CA 约束和服务端用途，不能只凭颁发者名称关联。只信任所选根 CA，不联网下载中间证书。允许已过期证书归档并保留真实有效期，不代表它仍可安全使用。验证依据：[OpenSSL verify](https://docs.openssl.org/3.4/man1/openssl-verification-options/)。
+- 无服务私钥的历史版本可以下载 PEM，但不可导出包含私钥的 ZIP。重复导入已有证书/历史版本会拒绝；已有普通上传记录不会被静默覆盖或移动。
+- 单次证书文件最大 256 KiB，证书链最多 10 张，私钥最大 32 KiB；不支持 PFX / P12 或带口令私钥。根私钥加密存储且不提供网页下载。
+
+验证：`npm test`；`npm run build -- --webpack` 后运行 `node --experimental-strip-types tests/aliyun-credentials.integration.mjs`（使用 Apple Container 临时 PostgreSQL，含完整私有 CA 流程，不访问用户数据库或公共 CA）。
+
 ## 使用 Docker Compose 部署
 
 推荐直接使用发布到 Docker Hub 的固定版本镜像：
 
 ```text
-docker.io/easitwch/cert-ops:0.0.9
+docker.io/easitwch/cert-ops:0.0.10
 ```
 
 也可使用 `docker.io/easitwch/cert-ops:latest`。`latest` 会随新版本发布更新，运行中的容器不会自动升级；仍需拉取镜像并重建容器。需要固定部署版本时保留版本号标签。
 
-`0.0.9` 是多架构镜像，同时支持：
+`0.0.10` 是多架构镜像，同时支持：
 
 - `linux/amd64`：Intel/AMD 服务器、普通 x86_64 Linux 主机
 - `linux/arm64`：Apple Silicon、ARM64 Linux 主机
@@ -94,7 +123,7 @@ http://localhost:3000
 
 Compose 会启动：
 
-- `certops`：`docker.io/easitwch/cert-ops:0.0.9` Web 服务
+- `certops`：`docker.io/easitwch/cert-ops:0.0.10` Web 服务
 - `postgres`：PostgreSQL 16，数据保存在 `certops_postgres_data` Volume 中
 
 应用首次访问数据库时会自动创建 `cert_ops` schema、数据表和索引，无需手动导入 SQL。
@@ -140,7 +169,7 @@ docker run -d \
   -e CERTOPS_ADMIN_USERNAME='admin' \
   -e CERTOPS_ADMIN_PASSWORD='replace-with-a-strong-admin-password' \
   -e CERTOPS_SESSION_SECRET='replace-with-at-least-32-random-characters' \
-  docker.io/easitwch/cert-ops:0.0.9
+  docker.io/easitwch/cert-ops:0.0.10
 ```
 
 数据库用户需要具备目标数据库的连接、创建 schema、建表和创建索引权限。密码含有 `@`、`:`、`/`、`#` 等字符时，必须先进行 URL 编码。
@@ -168,13 +197,23 @@ curl -X POST https://certops.example.com/api/cron/reminders \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-内置定时器从 `0.0.3` 开始提供。从旧版本升级时，将 `compose.yml` 中 `certops.image` 更新为 `docker.io/easitwch/cert-ops:0.0.9`（或 `latest`）。升级到多账号版本前，先备份数据库和加密密钥，并停止全部旧版 CertOps 实例；不要停止或删除数据库。单实例示例：
+内置定时器从 `0.0.3` 开始提供。从旧版本升级时，将 `compose.yml` 中 `certops.image` 更新为 `docker.io/easitwch/cert-ops:0.0.10`（或 `latest`）。升级前，先备份数据库和加密密钥，并停止全部旧版 CertOps 实例；不要停止或删除数据库，也不要混跑新旧版本。单实例示例：
 
 ```bash
 docker compose pull certops
 docker compose stop certops
 docker compose up -d certops
 ```
+
+### 0.0.10 更新内容：私有证书管理与导航整理
+
+- 新增多个私有根 CA 的创建、导入及删除；支持只导入根证书，之后补充私钥。根 CA 存在关联服务证书时禁止删除。
+- 支持 IPv4 / IPv6 服务证书签发、已有服务证书导入、续签历史与 PEM / KEY 导出；私钥加密保存，镜像内置 OpenSSL。
+- 项目分组下分别管理公有、私有证书，顶部统计合并两类证书；根 CA 作为跨项目资源独立管理。
+- 项目、证书类型、CA 筛选和详情使用 URL 保存导航状态，刷新及重新登录后保留位置；系统设置改为独立页面，通知与签发配置使用 Tab 切换。
+- 五语言切换移至右上角下拉菜单，支持键盘操作和浏览器记忆；更新品牌样式，统一移除重复页面大标题及冗余说明。
+- 提供 `0.0.10` 和 `latest` 两个双架构标签；发布测试在独立临时数据库验证公有与私有证书流程，不调用真实 DNS / 公共 CA。
+- 升级前备份数据库及 `CERT_ENCRYPTION_KEY`，停止旧应用后再启动新镜像。数据库增量迁移不会清空现有记录；回退时应恢复升级前备份。
 
 ### 0.0.9 更新内容：申请与续签分离
 
@@ -267,7 +306,7 @@ API：`POST /api/acme/orders` 传 `dnsProvider: "manual"`、`autoRenew: false`�
 
 ### 阿里云自动模式
 
-ACME 功能从 `0.0.4` 开始提供，旧的 `docker.io/easitwch/cert-ops:0.0.3` 镜像不包含此功能。可直接使用 `0.0.9` 镜像，也可使用下面的源码构建方式。
+ACME 功能从 `0.0.4` 开始提供，旧的 `docker.io/easitwch/cert-ops:0.0.3` 镜像不包含此功能。可直接使用 `0.0.10` 镜像，也可使用下面的源码构建方式。
 
 ### 配置与申请
 
@@ -333,7 +372,7 @@ docker compose -f compose.example.yml -f compose.acme.example.yml up -d --build
 docker compose -f compose.example.yml -f compose.acme.example.yml logs -f certops
 ```
 
-这个可选覆盖文件会将镜像替换为本地源码构建的 `cert-ops:acme-local`，保留已有数据库服务和数据卷。数据库结构在启动时自动增量创建，不清空原证书。使用 `compose.example.yml` 中的 `0.0.9` 镜像时，无需此覆盖文件。
+这个可选覆盖文件会将镜像替换为本地源码构建的 `cert-ops:acme-local`，保留已有数据库服务和数据卷。数据库结构在启动时自动增量创建，不清空原证书。使用 `compose.example.yml` 中的 `0.0.10` 镜像时，无需此覆盖文件。
 
 ### Compose 示例：独立 PostgreSQL
 
@@ -367,7 +406,7 @@ docker compose -f compose.external.yml up -d --build
 
 ## 本地开发
 
-本地开发需要 Node.js 22+ 和 PostgreSQL 14+：
+本地开发需要 Node.js 22+、PostgreSQL 14+；局域网证书签发还需 OpenSSL 1.1.1+ / 3.x：
 
 ```bash
 npm install
@@ -386,6 +425,22 @@ CERTOPS_SESSION_SECRET=replace-with-at-least-32-random-characters
 ```
 
 默认访问 `http://localhost:3000`。如果没有配置可用的 PostgreSQL，应用会进入演示模式。
+
+### 页面路由
+
+界面语言在页面右上角通过语言菜单切换，支持简体中文、繁體中文、English、日本語和 한국어；选择即时生效并保存在当前浏览器。菜单支持方向键选择、Enter 确认、Esc 关闭。系统设置为独立的 `/settings` 页面，使用 Tab 切换通知设置与证书签发（含 Let’s Encrypt 配置和阿里云账号管理）。旧的 `/?settings=...` 链接兼容跳转至新页面，`settings=general` 进入通知设置。
+
+左侧仅显示具体项目分组，不提供“全部项目”入口。首次进入时请自行选择分组；尚无分组时先创建。已有分组链接刷新后保持选中，失效分组链接提示重新选择；根 CA 管理仍可查看该 CA 的跨项目服务证书。
+
+项目分组、公有／私有证书、根 CA 管理、状态筛选、系统设置页签和证书详情均同步到 URL。刷新、浏览器前进／后退或重新登录后会恢复对应位置，也可收藏页面链接。例如：
+
+- `/?view=roots`：根 CA 管理
+- `/settings?tab=notifications`：通知设置（默认页签）
+- `/settings?tab=acme`：证书签发与账号管理
+- `/?project=<分组 UUID>&type=private`：指定项目的私有证书
+- `/?certificate=<证书 UUID>`：证书详情
+
+URL 仅保存导航状态；搜索输入、未提交的申请／编辑表单及密钥不会写入地址或在刷新后恢复。
 
 常用检查命令：
 
