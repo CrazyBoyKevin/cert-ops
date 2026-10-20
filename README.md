@@ -2,9 +2,77 @@
 
 CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 证书的管理平台。
 
-当前版本：[`0.0.10`](https://hub.docker.com/r/easitwch/cert-ops/tags?name=0.0.10)，支持 `linux/amd64` 和 `linux/arm64`。`latest` 与当前发布版本指向同一份镜像。
+当前版本：[`0.1.0`](https://hub.docker.com/r/easitwch/cert-ops/tags?name=0.1.0)，支持 `linux/amd64` 和 `linux/arm64`。`latest` 与当前发布版本指向同一份镜像。
+
+### 0.1.0 安全修复
+
+- Nodemailer 升级至 `10.1.7`，使用其自带类型声明，移除旧 `@types/nodemailer`。
+- `node-forge` 暂无官方修复版，因此保留 `acme-client@5.4.0` 的原生加密和 ACME 协议实现，以 `vendor/acme-client` 本地依赖移除已弃用的 Forge 接口、类型和依赖。不是忽略审计告警，也不降级 ACME 协议库。来源、完整性哈希、MIT 许可与维护说明见该目录；后续应持续跟进上游修复，条件满足时回归官方包。
+- 2026-10-20：`npm audit --omit=dev` 为 **0 项漏洞**，对应 `0.0.10` 的 3 项生产依赖告警已在源码消除。全量审计仍有 5 项开发依赖告警，来自 ESLint 的 `braces` 依赖链，不包含在运行镜像的生产依赖中；不代表整个项目已无任何安全风险。
+- 验证命令：`npm test`、`node --experimental-strip-types --test tests/security-transports.integration.mjs`、`npm run build -- --webpack`，以及构建后的 `node --experimental-strip-types tests/aliyun-credentials.integration.mjs`。协议测试只连接回环地址上的模拟 SMTP / CA，不发送真实邮件或访问真实 DNS / CA；数据库测试使用独立临时 PostgreSQL。
+- 从源码构建时必须包含 `vendor/`；Dockerfile 的依赖和运行阶段均已加入复制。采用 Apple Container 源码归档构建时，也必须将该目录加入归档并在 `npm ci` 前解包。
+
+`0.1.0` 与对应的 `latest` 包含上述修复；升级时请拉取新镜像并重建应用容器，保留数据库和密钥。
 
 ## 功能
+
+### 管理平台 HTTPS（从 0.1.0 开始提供）
+
+系统设置新增 **HTTPS 访问** 页签：上传 / 粘贴完整 PEM 证书链与无密码 KEY 私钥，填写完整的外部 HTTPS 地址（例如 `https://certops.example.com:9443`），保存后直接提供 TLS 服务，不需要额外 Nginx。
+
+1. 先配置固定、至少 32 位随机字符的 `CERT_ENCRYPTION_KEY`，开放 / 映射 HTTPS 端口（默认 `9443`）。首次配置仍从 HTTP 进入，请只在本机、SSH 隧道或可信隔离网络上传，避免明文传输私钥。
+2. 上传服务器证书链（叶证书在前，中间证书在后）和匹配私钥。系统校验有效期、SAN 域名 / IP、证书用途、证书链顺序及密钥匹配；不能直接把根 CA 当作服务器证书。私有 CA 签发的服务器证书也可使用，但须先在访问设备正确安装并信任其根 CA。
+3. 通过页面提供的 HTTPS 地址打开管理平台，确认浏览器没有证书错误，再开启“强制 HTTPS”。仅允许从配置的 HTTPS 地址开启，不能通过伪造代理头在 HTTP 上开启。
+4. 强制开启后，HTTP 的 GET / HEAD 返回临时跳转至固定的 HTTPS 地址，登录和其他 HTTP 写入请求返回 `426 HTTPS_REQUIRED`。仅 `/healthz` 保留不含业务信息的 HTTP 健康检查。登录 Cookie 在 HTTPS 下使用 Secure 属性。
+
+访问证书与受管理的业务证书相互独立，不会自动跟随业务证书的 ACME 续签；更新证书时重新上传即可热更新，无需重启。启用强制 HTTPS 后，更改外部地址须先关闭强制访问。TLS 信任链是否完整 / 被客户端信任需在实际浏览器验证，服务器的格式与匹配校验不代表公网信任保证。证书到期不会自动降级回 HTTP。
+
+**本地运行：** `npm run dev -- --hostname 127.0.0.1 --port 3000`；生产构建后 `npm start`。必须使用仓库的 `server.mjs` 启动入口，直接运行 `next start` 不提供此功能。HTTP 端口使用 `PORT` / `--port`，HTTPS 使用 `CERTOPS_HTTPS_PORT`。此入口直接终止 TLS，不信任客户端的 `X-Forwarded-Proto`；如果已有反向代理，请使用 TLS 透传或在代理侧单独配置 HTTPS 策略，不要把直连 HTTPS 强制验证当作代理探测。
+
+**Compose + 自带数据库：**
+
+```bash
+docker compose -f compose.example.yml -f compose.https.example.yml pull
+docker compose -f compose.example.yml -f compose.https.example.yml up -d
+```
+
+覆盖文件映射 `9443:9443` 并持久化 `/app/data`，保留原有 PostgreSQL 数据卷。需要公网 443 时，在 `.env` 设置 `CERTOPS_HTTPS_EXTERNAL_PORT=443`，页面填写 `https://certops.example.com`。`0.0.10` 及更早镜像不包含此功能；请使用 `0.1.0` 或重新拉取 `latest`，不能仅增加端口映射而继续使用旧镜像。
+
+**使用独立 PostgreSQL：**
+
+```yaml
+services:
+  certops:
+    image: docker.io/easitwch/cert-ops:0.1.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "9443:9443"
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL}"
+      CERT_ENCRYPTION_KEY: "${CERT_ENCRYPTION_KEY:?Set CERT_ENCRYPTION_KEY}"
+      CERTOPS_ADMIN_USERNAME: "${CERTOPS_ADMIN_USERNAME:?Set CERTOPS_ADMIN_USERNAME}"
+      CERTOPS_ADMIN_PASSWORD: "${CERTOPS_ADMIN_PASSWORD:?Set CERTOPS_ADMIN_PASSWORD}"
+      CERTOPS_SESSION_SECRET: "${CERTOPS_SESSION_SECRET:?Set CERTOPS_SESSION_SECRET}"
+      CRON_SECRET: "${CRON_SECRET:?Set CRON_SECRET}"
+      CERTOPS_DATA_DIR: /app/data
+      CERTOPS_HTTPS_PORT: "9443"
+    volumes:
+      - certops_tls_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  certops_tls_data:
+```
+
+`DATABASE_URL` 必须指向容器可达地址；Docker Desktop 可用 `host.docker.internal` 访问宿主机，Linux 需自行配置 host-gateway / 数据库网络。
+
+**持久化与恢复：** 配置和私钥使用 AES-256-GCM 加密，写入 `CERTOPS_DATA_DIR/https.enc`（文件权限 `0600`，新建目录 `0700`），不会通过读取 API 回传 PEM 或私钥。必须同时备份数据卷和原 `CERT_ENCRYPTION_KEY`，不要删除数据卷或随意更换密钥。无法解密 / 加载持久化配置时，服务器拒绝启动，不会自动恢复明文入口。紧急修复时隔离访问网络，设置 `CERTOPS_HTTPS_RECOVERY=true` 并重启，此模式忽略原 HTTPS 配置、恢复 HTTP 管理入口；上传正确证书后，移除此变量并重启，再从 HTTPS 页面重新开启强制访问。恢复模式不删除原配置，只有保存新配置才替换它。
+
+源码归档 / Docker 构建需包含 `server.mjs`、`server/` 和 `vendor/`，不得包含 `data/`、`.env.local` 或任何真实证书私钥。当前不启用长期 HSTS，以保留明确的恢复路径；仍建议只通过 HTTPS 收藏地址访问，避免明文首次请求。
 
 从 `0.0.6` 开始支持多阿里云账号凭证管理；`0.0.5` 及更早镜像仍为单账号。
 
@@ -29,7 +97,7 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 从“证书签发”工具迁入私有 CA 与 IP 服务证书功能，使用 CertOps 的登录、PostgreSQL、加密存储、分组和到期提醒，不再需要单独运行 Python 服务。
 
 1. 左侧以项目分组为主导航，分组在公有、私有证书间共用，侧栏数量是两类证书总数。选中项目后，在内容区切换「公有证书 / 私有证书」，切换类型不会丢失项目选择；顶部统计合并当前项目的公有、私有证书，不随类型、CA、搜索或状态筛选变化；下方列表遵循这些筛选。公有区保留 Let’s Encrypt 与原有上传记录；这是管理分类，不代表对历史上传证书的公共信任认证。
-2. 左侧独立的「根 CA 管理」支持创建、导入多个 CA。CA 是跨项目资源，不属于某个分组；点击「查看跨项目服务证书」会转到「全部项目 → 私有证书」并显示可清除的 CA 筛选。选择其他项目会清除旧 CA 筛选，避免隐式漏掉证书。创建根 CA 时可填写名称、组织、部门、国家代码、省 / 州、城市及有效期，签名后不可修改。
+2. 左侧独立的「根 CA 管理」支持创建、导入多个 CA。CA 是跨项目资源，不属于某个分组；点击「查看跨项目服务证书」会在当前页面打开弹窗，以列表显示该 CA 在各项目下的服务证书、所属项目及到期日期；关闭后保留当前页面和筛选。创建根 CA 时可填写名称、组织、部门、国家代码、省 / 州、城市及有效期，签名后不可修改。
 3. 点击「签发私有 IP 证书」，选择有私钥的 CA 和项目分组，填写服务名称以及 IPv4 / IPv6 地址。支持多个 IP，不支持协议、端口、网段或 IP 通配符。
 4. 在证书详情中续签、调整 IP、下载或删除历史版本。续签使用原 CA、生成新私钥，保留旧版本；不自动续期或部署。
 5. 导出仅包含 `.pem` 证书和 `.key` 服务私钥。根证书 `.crt` / `.cer` 单独下载，根私钥不提供网页导出。
@@ -58,12 +126,12 @@ CertOps 是一个用于集中上传、解析、分组、监控和提醒 SSL/TLS 
 推荐直接使用发布到 Docker Hub 的固定版本镜像：
 
 ```text
-docker.io/easitwch/cert-ops:0.0.10
+docker.io/easitwch/cert-ops:0.1.0
 ```
 
 也可使用 `docker.io/easitwch/cert-ops:latest`。`latest` 会随新版本发布更新，运行中的容器不会自动升级；仍需拉取镜像并重建容器。需要固定部署版本时保留版本号标签。
 
-`0.0.10` 是多架构镜像，同时支持：
+`0.1.0` 是多架构镜像，同时支持：
 
 - `linux/amd64`：Intel/AMD 服务器、普通 x86_64 Linux 主机
 - `linux/arm64`：Apple Silicon、ARM64 Linux 主机
@@ -123,7 +191,7 @@ http://localhost:3000
 
 Compose 会启动：
 
-- `certops`：`docker.io/easitwch/cert-ops:0.0.10` Web 服务
+- `certops`：`docker.io/easitwch/cert-ops:0.1.0` Web 服务
 - `postgres`：PostgreSQL 16，数据保存在 `certops_postgres_data` Volume 中
 
 应用首次访问数据库时会自动创建 `cert_ops` schema、数据表和索引，无需手动导入 SQL。
@@ -169,7 +237,7 @@ docker run -d \
   -e CERTOPS_ADMIN_USERNAME='admin' \
   -e CERTOPS_ADMIN_PASSWORD='replace-with-a-strong-admin-password' \
   -e CERTOPS_SESSION_SECRET='replace-with-at-least-32-random-characters' \
-  docker.io/easitwch/cert-ops:0.0.10
+  docker.io/easitwch/cert-ops:0.1.0
 ```
 
 数据库用户需要具备目标数据库的连接、创建 schema、建表和创建索引权限。密码含有 `@`、`:`、`/`、`#` 等字符时，必须先进行 URL 编码。
@@ -197,13 +265,21 @@ curl -X POST https://certops.example.com/api/cron/reminders \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-内置定时器从 `0.0.3` 开始提供。从旧版本升级时，将 `compose.yml` 中 `certops.image` 更新为 `docker.io/easitwch/cert-ops:0.0.10`（或 `latest`）。升级前，先备份数据库和加密密钥，并停止全部旧版 CertOps 实例；不要停止或删除数据库，也不要混跑新旧版本。单实例示例：
+内置定时器从 `0.0.3` 开始提供。从旧版本升级时，将 `compose.yml` 中 `certops.image` 更新为 `docker.io/easitwch/cert-ops:0.1.0`（或 `latest`）。升级前，先备份数据库和加密密钥，并停止全部旧版 CertOps 实例；不要停止或删除数据库，也不要混跑新旧版本。单实例示例：
 
 ```bash
 docker compose pull certops
 docker compose stop certops
 docker compose up -d certops
 ```
+
+### 0.1.0 更新内容：HTTPS、安全修复与界面统一
+
+- 管理平台支持上传访问证书、TLS 热更新与强制 HTTPS，配置加密持久化；新增 HTTPS Compose 和独立数据库部署示例。
+- 修复 3 项生产依赖安全告警：升级 Nodemailer，移除 ACME 客户端已弃用的 Forge 依赖，保留原生加密及协议实现。
+- 界面统一黑白灰；登录页、侧栏与浏览器图标共用灰色 Logo，分组标记保持一致，保留成功、警告和错误状态色。
+- 精简重复说明，修复登录输入框焦点效果，增加密码显示切换；根 CA 关联证书通过弹窗查看。
+- 提供 `0.1.0` 和同一镜像索引的 `latest`；双架构验收包含真实 TLS、加密配置恢复、公有与私有证书流程，使用临时数据库和测试 CA。
 
 ### 0.0.10 更新内容：私有证书管理与导航整理
 
@@ -307,7 +383,7 @@ API：`POST /api/acme/orders` 传 `dnsProvider: "manual"`、`autoRenew: false`�
 
 ### 阿里云自动模式
 
-ACME 功能从 `0.0.4` 开始提供，旧的 `docker.io/easitwch/cert-ops:0.0.3` 镜像不包含此功能。可直接使用 `0.0.10` 镜像，也可使用下面的源码构建方式。
+ACME 功能从 `0.0.4` 开始提供，旧的 `docker.io/easitwch/cert-ops:0.0.3` 镜像不包含此功能。可直接使用 `0.1.0` 镜像，也可使用下面的源码构建方式。
 
 ### 配置与申请
 
@@ -373,7 +449,7 @@ docker compose -f compose.example.yml -f compose.acme.example.yml up -d --build
 docker compose -f compose.example.yml -f compose.acme.example.yml logs -f certops
 ```
 
-这个可选覆盖文件会将镜像替换为本地源码构建的 `cert-ops:acme-local`，保留已有数据库服务和数据卷。数据库结构在启动时自动增量创建，不清空原证书。使用 `compose.example.yml` 中的 `0.0.10` 镜像时，无需此覆盖文件。
+这个可选覆盖文件会将镜像替换为本地源码构建的 `cert-ops:acme-local`，保留已有数据库服务和数据卷。数据库结构在启动时自动增量创建，不清空原证书。使用 `compose.example.yml` 中的 `0.1.0` 镜像时，无需此覆盖文件。
 
 ### Compose 示例：独立 PostgreSQL
 

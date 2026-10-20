@@ -83,7 +83,7 @@ export function AcmeSettingsPanel({ language }: { language: Language }) {
     } catch (error) { setResult({ error }); } finally { setBusy(false); }
   }
   return <div className="settings-pane acme-form">
-    <div className="settings-pane-heading"><h3>Let’s Encrypt</h3><p>{copy.subtitle}</p></div>
+    <div className="settings-pane-heading"><h3>Let’s Encrypt</h3></div>
     {result && <div className={`acme-notice ${result.error ? "error" : "success"}`} role="status">{result.error ? errorText(result.error, language) : result.text}</div>}
     {loading ? <p><RefreshCw size={16} className="spinning" /> {common.loadingContent}</p> : loaded && <>
       <form className="acme-form" onSubmit={save}>
@@ -187,7 +187,7 @@ export function AcmeModal({ language, groups, initialGroup, onClose, onConfigure
   return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <div className="modal acme-modal" role="dialog" aria-modal="true" aria-labelledby="acme-title">
       <button className="modal-close" onClick={onClose} aria-label={common.done}><X size={19} /></button>
-      <div className="modal-title-row"><span className="title-icon"><FileKey2 size={21} /></span><div><h2 id="acme-title">{copy.title}</h2><p>{copy.subtitle}</p></div></div>
+      <div className="modal-title-row"><span className="title-icon"><FileKey2 size={21} /></span><div><h2 id="acme-title">{copy.title}</h2></div></div>
       <div className="mode-tabs"><button className={tab === "new" ? "active" : ""} onClick={() => setTab("new")}>{copy.newOrder}</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}>{copy.orders} · {pagination.total}</button></div>
       {error != null && <div className="acme-notice error" role="alert">{errorText(error, language)}</div>}
       {pendingCleanup > 0 && <div className="acme-notice">{copy.cleanup}</div>}

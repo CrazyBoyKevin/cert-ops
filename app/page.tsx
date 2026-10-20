@@ -23,6 +23,8 @@ import { certificateExportNames, type CertificateExportContents } from "@/lib/ce
 import { copyText } from "@/lib/clipboard";
 import { Brand } from "./brand";
 import { LanguageSwitcher } from "./language-switcher";
+import { HttpsSettingsPanel } from "./https-panel";
+import { httpsMessages } from "@/lib/https-i18n";
 
 const EMPTY_SETTINGS: NotificationSettings = {
   dingtalkEnabled: false, dingtalkWebhook: "", dingtalkSecret: "", feishuEnabled: false, feishuWebhook: "", feishuSecret: "",
@@ -69,7 +71,7 @@ export default function Home() {
 
 function Workspace() {
   const router = useRouter(), searchParams = useSearchParams(), pathname = usePathname();
-  const route = readAppRoute(searchParams, pathname);
+  const route = useMemo(() => readAppRoute(searchParams, pathname), [searchParams, pathname]);
   const groupFilter = route.project, certificateScope = route.type, privateView = route.view, authorityFilter = route.ca, statusFilter = route.status;
   const settingsOpen = route.settings !== null;
   const [certificates, setCertificates] = useState<Certificate[]>([]);
@@ -268,7 +270,7 @@ function Workspace() {
           {groups.map((group) => (
             <div key={group.id} className={`group-entry ${!settingsOpen && privateView === "services" && groupFilter === group.id ? "selected" : ""}`}>
               <button className={`group-item ${!settingsOpen && privateView === "services" && groupFilter === group.id ? "selected" : ""}`} aria-current={!settingsOpen && privateView === "services" && groupFilter === group.id ? "page" : undefined} title={group.name} aria-label={group.name} onClick={() => changeProject(group.id)}>
-                <span className="group-dot" style={{ background: group.color }} /><span>{group.name}</span><b>{certificatesInProject(certificates, group.id).length}</b>
+                <span className="group-dot" /><span>{group.name}</span><b>{certificatesInProject(certificates, group.id).length}</b>
               </button>
               <button className="group-rename" aria-label={`${copy.renameGroup} ${group.name}`} onClick={() => setGroupEditTarget(group)}><Pencil size={13} /></button>
             </div>
@@ -285,7 +287,7 @@ function Workspace() {
 
       <main className="main-content">
         {settingsOpen ? <>
-          <header className="topbar"><div className="page-context"><div className="breadcrumb"><span>{copy.systemSettings}</span><ChevronRight size={13} /><b>{route.settings === "acme" ? acmeMessages(language).settings : copy.notificationSettings}</b></div></div><LanguageSwitcher language={language} onChange={changeLanguage} /></header>
+          <header className="topbar"><div className="page-context"><div className="breadcrumb"><span>{copy.systemSettings}</span><ChevronRight size={13} /><b>{route.settings === "https" ? httpsMessages(language).title : route.settings === "acme" ? acmeMessages(language).settings : copy.notificationSettings}</b></div></div><LanguageSwitcher language={language} onChange={changeLanguage} /></header>
           <div className="content-wrap settings-content">{loading ? <p role="status">{copy.loadingContent}</p> : <SystemSettingsPage tab={route.settings || "notifications"} setTab={settings => navigate({ settings })} copy={copy} language={language} settings={settings} setSettings={setSettings} onSave={() => void persistSettings()} onTest={() => void testNotification()} />}</div>
         </> : <>
         <header className="topbar">
@@ -308,7 +310,7 @@ function Workspace() {
             <div className="demo-banner"><WifiOff size={16} /><span><strong>{copy.demoMode}</strong> · {copy.demoNote}</span></div>
           )}
 
-          {privateView === "roots" ? <section className="panel private-roots-panel"><PrivateCaSettings language={language} onChanged={() => void loadData()} onManage={id => { navigate({ project: "all", type: "private", ca: id, view: "services", status: "all", certificate: null }); setSearch(""); }} /></section> : needsProject ? <section className="panel empty-state"><Folder size={34} /><h2>{loading ? "…" : groups.length ? navigation.chooseProject : navigation.noGroups}</h2>{!loading && <><p>{groups.length ? navigation.chooseProjectHint : navigation.noGroupsHint}</p><button className="primary-button" onClick={() => setGroupOpen(true)}><Plus size={16} />{copy.newGroup}</button></>}</section> : <>{certificateScope === "private" && authorityFilter !== "all" && <div className="active-ca-filter"><ShieldCheck size={16} /><span>{pkiMessages(language).ca}: <strong>{authorities.find(root => root.id === authorityFilter)?.subject.CN || authorityFilter}</strong></span><button onClick={() => setAuthorityFilter("all")} aria-label={navigation.clearCa}>{navigation.clearCa}<X size={14} /></button></div>}
+          {privateView === "roots" ? <section className="panel private-roots-panel"><PrivateCaSettings language={language} onChanged={() => void loadData()} /></section> : needsProject ? <section className="panel empty-state"><Folder size={34} /><h2>{loading ? "…" : groups.length ? navigation.chooseProject : navigation.noGroups}</h2>{!loading && <><p>{groups.length ? navigation.chooseProjectHint : navigation.noGroupsHint}</p><button className="primary-button" onClick={() => setGroupOpen(true)}><Plus size={16} />{copy.newGroup}</button></>}</section> : <>{certificateScope === "private" && authorityFilter !== "all" && <div className="active-ca-filter"><ShieldCheck size={16} /><span>{pkiMessages(language).ca}: <strong>{authorities.find(root => root.id === authorityFilter)?.subject.CN || authorityFilter}</strong></span><button onClick={() => setAuthorityFilter("all")} aria-label={navigation.clearCa}>{navigation.clearCa}<X size={14} /></button></div>}
 
           <section className="panel certificate-panel" aria-label={scopeTitle}>
             <div className="toolbar">
@@ -329,7 +331,7 @@ function Workspace() {
                     return (
                       <tr key={certificate.id} onClick={() => setDetailTarget(certificate)}>
                         <td><div className="domain-cell"><span className="cert-icon"><ShieldCheck size={18} /></span><span><strong>{certificate.primaryDomain}</strong><small>{certificate.name} · {certificate.algorithm}</small></span></div></td>
-                        <td><span className="project-tag"><i style={{ background: certificate.groupColor }} />{certificate.groupName}</span></td>
+                        <td><span className="project-tag"><i />{certificate.groupName}</span></td>
                         <td><span className="issuer">{certificate.issuer}</span></td>
                         <td><span className="date-cell"><strong>{formatDate(certificate.expiresAt, language)}</strong><small>{copy.issuedOn} {formatDate(certificate.validFrom, language)}</small></span></td>
                         <td><span className={`status-badge ${status.tone}`}><i />{statusLabel(certificate, copy)}</span></td>
@@ -403,7 +405,7 @@ function UploadModal({ copy, groups, initialGroup, onClose, onSuccess, onError }
     <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <form className="modal upload-modal" onSubmit={submit}>
         <button type="button" className="modal-close" onClick={onClose}><X size={19} /></button>
-        <div className="modal-title-row"><span className="title-icon"><UploadCloud size={20} /></span><div><h2>{copy.uploadTitle}</h2><p>{copy.uploadSubtitle}</p></div></div>
+        <div className="modal-title-row"><span className="title-icon"><UploadCloud size={20} /></span><div><h2>{copy.uploadTitle}</h2></div></div>
         <div className="mode-tabs"><button type="button" className={mode === "file" ? "active" : ""} onClick={() => setMode("file")}>{copy.fileUpload}</button><button type="button" className={mode === "paste" ? "active" : ""} onClick={() => setMode("paste")}>{copy.pasteContent}</button></div>
         <div className="form-grid two"><label><span>{copy.certName} <em>{copy.optional}</em></span><input name="name" placeholder={copy.certNamePlaceholder} /></label><label><span>{copy.project} <b>*</b></span><select name="groupId" required defaultValue={groups.some(group => group.id === initialGroup) ? initialGroup : groups[0]?.id || ""}><option value="" disabled>{copy.selectGroup}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label></div>
         {mode === "file" ? (
@@ -449,7 +451,7 @@ function EditCertificateModal({ copy, certificate, groups, onClose, onUpdated, o
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal edit-cert-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><div className="modal-title-row"><span className="title-icon"><Pencil size={19} /></span><div><h2>{copy.editTitle}</h2><p>{copy.editDesc}</p></div></div><div className="edit-cert-domain"><ShieldCheck size={17} /><strong>{certificate.primaryDomain}</strong></div><label><span>{copy.certName} <b>*</b></span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={180} required /></label><label><span>{copy.project} <b>*</b></span><select value={groupId} onChange={(event) => setGroupId(event.target.value)} required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.saveChanges}</button></div></form></div>;
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal edit-cert-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><div className="modal-title-row"><span className="title-icon"><Pencil size={19} /></span><div><h2>{copy.editTitle}</h2></div></div><div className="edit-cert-domain"><ShieldCheck size={17} /><strong>{certificate.primaryDomain}</strong></div><label><span>{copy.certName} <b>*</b></span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={180} required /></label><label><span>{copy.project} <b>*</b></span><select value={groupId} onChange={(event) => setGroupId(event.target.value)} required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.saveChanges}</button></div></form></div>;
 }
 
 function SystemSettingsPage({ tab, setTab, copy, language, settings, setSettings, onSave, onTest }: { tab: SettingsTab; setTab: (tab: SettingsTab) => void; copy: Messages; language: Language; settings: NotificationSettings; setSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>; onSave: () => void; onTest: () => void }) {
@@ -457,7 +459,8 @@ function SystemSettingsPage({ tab, setTab, copy, language, settings, setSettings
   function onTabKey(event: React.KeyboardEvent<HTMLDivElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const next: SettingsTab = event.key === "Home" ? "notifications" : event.key === "End" ? "acme" : tab === "acme" ? "notifications" : "acme";
+    const tabs: SettingsTab[] = ["notifications", "acme", "https"];
+    const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     event.currentTarget.querySelector<HTMLButtonElement>(`#settings-tab-${next}`)?.focus();
     setTab(next);
   }
@@ -466,11 +469,12 @@ function SystemSettingsPage({ tab, setTab, copy, language, settings, setSettings
         <div className="settings-page-tabs" role="tablist" aria-label={copy.systemSettings} onKeyDown={onTabKey}>
           <button id="settings-tab-notifications" role="tab" aria-selected={tab === "notifications"} aria-controls="settings-panel-notifications" tabIndex={tab === "notifications" ? 0 : -1} className={tab === "notifications" ? "active" : ""} onClick={() => setTab("notifications")}><BellRing size={17} />{copy.notificationSettings}</button>
           <button id="settings-tab-acme" role="tab" aria-selected={tab === "acme"} aria-controls="settings-panel-acme" tabIndex={tab === "acme" ? 0 : -1} className={tab === "acme" ? "active" : ""} onClick={() => setTab("acme")}><FileKey2 size={17} />{acmeMessages(language).settings}</button>
+          <button id="settings-tab-https" role="tab" aria-selected={tab === "https"} aria-controls="settings-panel-https" tabIndex={tab === "https" ? 0 : -1} className={tab === "https" ? "active" : ""} onClick={() => setTab("https")}><LockKeyhole size={17} />{httpsMessages(language).title}</button>
         </div>
         <div id={`settings-panel-${tab}`} role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={0} className="settings-page-body">
-        {tab === "acme" ? <AcmeSettingsPanel language={language} /> : (
+        {tab === "https" ? <HttpsSettingsPanel language={language} /> : tab === "acme" ? <AcmeSettingsPanel language={language} /> : (
           <div className="settings-pane notification-pane">
-            <div className="settings-pane-heading"><h3>{copy.notificationTitle}</h3><p>{copy.reminderDesc}</p></div>
+            <div className="settings-pane-heading"><h3>{copy.notificationTitle}</h3></div>
             <div className="reminder-timeline"><span>{copy.early}</span>{[15, 7, 3, 1].map((day) => <b key={day}>{day}</b>)}<i /><span>{copy.expiryDay}</span></div>
             <ChannelCard icon={<MessageSquare size={19} />} title={copy.dingtalk} description={copy.dingtalkDesc} enabled={settings.dingtalkEnabled} onToggle={(value) => update("dingtalkEnabled", value)}><label><span>{copy.webhook}</span><input value={settings.dingtalkWebhook} onChange={(event) => update("dingtalkWebhook", event.target.value)} placeholder="https://oapi.dingtalk.com/robot/send?..." spellCheck={false} /></label><SecretField id="dingtalk-secret" label={copy.signSecret} hint={copy.signSecretHint} value={settings.dingtalkSecret} onChange={(value) => update("dingtalkSecret", value)} placeholder="SEC..." showLabel={copy.showSecret} hideLabel={copy.hideSecret} /></ChannelCard>
             <ChannelCard icon={<Send size={18} />} title={copy.feishu} description={copy.feishuDesc} enabled={settings.feishuEnabled} onToggle={(value) => update("feishuEnabled", value)}><label><span>{copy.webhook}</span><input value={settings.feishuWebhook} onChange={(event) => update("feishuWebhook", event.target.value)} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." spellCheck={false} /></label><SecretField id="feishu-secret" label={copy.signSecret} hint={copy.signSecretHint} value={settings.feishuSecret} onChange={(value) => update("feishuSecret", value)} showLabel={copy.showSecret} hideLabel={copy.hideSecret} /></ChannelCard>
@@ -511,7 +515,7 @@ function GroupModal({ copy, onClose, onCreated, onError }: { copy: Messages; onC
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); const response = await authenticatedFetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }); const json = await response.json(); setSaving(false); if (!response.ok) return onError(json.error || copy.operationFailed); onCreated(json.data); }
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><FolderPlus size={20} /></span><h2>{copy.groupTitle}</h2><p>{copy.groupDesc}</p><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required placeholder={copy.groupPlaceholder} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.createGroup}</button></div></form></div>;
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal small-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose}><X size={19} /></button><span className="title-icon"><FolderPlus size={20} /></span><h2>{copy.groupTitle}</h2><label><span>{copy.groupName}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required placeholder={copy.groupPlaceholder} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>{copy.cancel}</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? copy.creating : copy.createGroup}</button></div></form></div>;
 }
 
 function EditGroupModal({ copy, group, onClose, onDelete, onUpdated, onError }: { copy: Messages; group: Group; onClose: () => void; onDelete: () => void; onUpdated: (group: Group) => void; onError: (message: string) => void }) {

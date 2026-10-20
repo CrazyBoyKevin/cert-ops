@@ -1,0 +1,16 @@
+# HTTPS support from 0.1.0. Use alongside compose.example.yml.
+services:
+  certops:
+    image: docker.io/easitwch/cert-ops:0.1.0
+    environment:
+      CERTOPS_DATA_DIR: /app/data
+      CERTOPS_HTTPS_PORT: "9443"
+    ports:
+      - "${CERTOPS_HTTPS_EXTERNAL_PORT:-9443}:9443"
+    volumes:
+      - certops_tls_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
+
+volumes:
+  certops_tls_data:

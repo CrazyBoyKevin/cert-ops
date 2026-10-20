@@ -17,6 +17,7 @@ import { migrateLegacyCredentials, readAliyunCredential, saveAliyunCredential, r
 import { readOrderIssuanceConfig, issueAcmeCertificate } from "../lib/acme-worker.ts";
 import { manualDnsCases } from "./manual-dns.integration-cases.mjs";
 import { privatePkiCases } from "./private-pki.integration-cases.mjs";
+import { platformHttpsCases, freePort } from "./platform-https.integration-cases.mjs";
 
 const exec = promisify(execFile), suffix = randomBytes(5).toString("hex");
 const containerId = `certops-multiaccount-${suffix}`;
@@ -123,7 +124,10 @@ try {
 
   const socket = createServer(); socket.listen(0, "127.0.0.1"); await once(socket, "listening");
   const port = socket.address().port; await new Promise((resolve) => socket.close(resolve));
-  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: "ignore" });
+  env.CERTOPS_DATA_DIR = path.join(scratch, "console-tls");
+  env.CERTOPS_HTTPS_PORT = String(await freePort());
+  env.CERTOPS_HTTPS_RECOVERY = "false";
+  server = spawn(process.execPath, ["server.mjs", "--production", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: "ignore" });
   const base = `http://127.0.0.1:${port}`;
   await waitUntil(async () => (await fetch(base + "/login", { signal: AbortSignal.timeout(1000) })).status === 200);
   for (const method of ["GET", "POST", "PATCH", "DELETE"]) assert.equal((await fetch(base + "/api/acme/credentials", { method })).status, 401);
@@ -212,6 +216,7 @@ try {
   console.log("Pending request pagination, certificate-scoped renewals, tracking and query validation passed.");
   console.log("Authenticated API CRUD, required selection, masked responses, and runtime integration passed. No real DNS or CA calls.");
   await privatePkiCases({ api, base, cookie, pool, groupId, scratch, exec });
+  await platformHttpsCases({ base, cookie, env, scratch });
   if (process.env.CERTOPS_TEST_PREVIEW === "true") {
     await pool.query(`UPDATE cert_ops.acme_orders SET status='issued',stage='issued',manual_expires_at=NOW()+INTERVAL '1 hour',manual_records=$1
       WHERE certificate_id IS NOT NULL AND dns_provider='manual'`, [JSON.stringify([{ name: "_acme-challenge.manual.example.com", rr: "_acme-challenge", type: "TXT", value: "sample-issued-cleanup-value", domain: "manual.example.com", verified: true }])]);

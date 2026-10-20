@@ -18,7 +18,7 @@ test("project, certificate type, CA, status and details survive a URL round trip
   assert.equal(route.certificate, certificate);
 });
 test("each settings tab retains its underlying root management context", () => {
-  for (const settings of ["notifications", "acme"]) {
+  for (const settings of ["notifications", "acme", "https"]) {
     const route = read(`view=roots&project=${project}&type=private&settings=${settings}`);
     const url = new URL(appRouteHref(route), "http://localhost");
     assert.equal(url.pathname, "/settings");

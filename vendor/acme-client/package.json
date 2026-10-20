@@ -1,0 +1,39 @@
+{
+  "name": "acme-client",
+  "description": "Simple and unopinionated ACME client (CertOps native crypto only)",
+  "author": "nmorsman",
+  "version": "5.4.0-certops.1",
+  "main": "src/index.js",
+  "types": "types/index.d.ts",
+  "license": "MIT",
+  "homepage": "https://github.com/publishlab/node-acme-client",
+  "engines": {
+    "node": ">= 16"
+  },
+  "files": [
+    "src",
+    "types"
+  ],
+  "dependencies": {
+    "@peculiar/x509": "^1.11.0",
+    "asn1js": "^3.0.5",
+    "axios": "^1.7.2",
+    "debug": "^4.3.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/publishlab/node-acme-client"
+  },
+  "keywords": [
+    "acme",
+    "client",
+    "lets",
+    "encrypt",
+    "acmev2",
+    "boulder"
+  ],
+  "bugs": {
+    "url": "https://github.com/publishlab/node-acme-client/issues"
+  },
+  "private": true
+}

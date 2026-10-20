@@ -1,23 +1,23 @@
 {
   "name": "cert-ops",
-  "version": "0.0.10",
+  "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production node server.mjs --production",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
     "@alicloud/pop-core": "^1.8.0",
-    "acme-client": "^5.4.0",
+    "acme-client": "file:vendor/acme-client",
     "lucide-react": "^1.28.0",
     "next": "^16.3.0",
-    "nodemailer": "^9.0.4",
+    "nodemailer": "^10.1.7",
     "pg": "^8.22.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
@@ -25,7 +25,6 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
-    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.4",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

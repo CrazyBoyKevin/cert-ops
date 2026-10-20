@@ -18,7 +18,7 @@ services:
       start_period: 10s
 
   certops:
-    image: docker.io/easitwch/cert-ops:0.0.10
+    image: docker.io/easitwch/cert-ops:0.1.0
     restart: unless-stopped
     depends_on:
       postgres:
@@ -33,7 +33,7 @@ services:
     ports:
       - "${CERTOPS_PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

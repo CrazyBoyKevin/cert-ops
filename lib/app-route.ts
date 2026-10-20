@@ -1,6 +1,6 @@
 import type { CertificateScope } from "./certificate-scope";
 
-export type SettingsTab = "notifications" | "acme";
+export type SettingsTab = "notifications" | "acme" | "https";
 export type AppRoute = {
   view: "services" | "roots";
   project: string;
@@ -20,7 +20,7 @@ export function readAppRoute(params: Pick<URLSearchParams, "get">, pathname = "/
     project: id(params.get("project")) || "all", type,
     ca: type === "private" ? id(params.get("ca")) || "all" : "all",
     status: status === "healthy" || status === "expiring" || status === "expired" ? status : "all",
-    settings: settings === "acme" ? "acme" : pathname === "/settings" || settings === "general" || settings === "notifications" ? "notifications" : null,
+    settings: settings === "https" ? "https" : settings === "acme" ? "acme" : pathname === "/settings" || settings === "general" || settings === "notifications" ? "notifications" : null,
     certificate: id(params.get("certificate")),
   };
 }

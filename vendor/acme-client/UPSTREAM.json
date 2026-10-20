@@ -1,0 +1,60 @@
+{
+  "name": "acme-client",
+  "version": "5.4.0",
+  "tarball": "https://registry.npmjs.org/acme-client/-/acme-client-5.4.0.tgz",
+  "integrity": "sha512-mORqg60S8iML6XSmVjqjGHJkINrCGLMj2QvDmFzI9vIlv1RGlyjmw3nrzaINJjkNsYXC41XhhD5pfy7CtuGcbA==",
+  "files": {
+    "LICENSE": {
+      "upstream": "ec18bd68901899a408635e2edf60d54a07ebf87cbfc48ddb23fd1c3b82092b75",
+      "vendored": "ec18bd68901899a408635e2edf60d54a07ebf87cbfc48ddb23fd1c3b82092b75"
+    },
+    "src/api.js": {
+      "upstream": "a989be02fbedb30f3893b8af2f43b5a56cc4c70244a82531d84f7687a77e2c47",
+      "vendored": "a989be02fbedb30f3893b8af2f43b5a56cc4c70244a82531d84f7687a77e2c47"
+    },
+    "src/auto.js": {
+      "upstream": "9ac11e26ca37fa98127f3fd2d367fbd6196f2ef6a87d3603f1255989de71c4fc",
+      "vendored": "9ac11e26ca37fa98127f3fd2d367fbd6196f2ef6a87d3603f1255989de71c4fc"
+    },
+    "src/axios.js": {
+      "upstream": "b542d879b99007f3d65ea43e8907bc9698514cdd98d9ebcd06e1fac14abe8f4c",
+      "vendored": "b542d879b99007f3d65ea43e8907bc9698514cdd98d9ebcd06e1fac14abe8f4c"
+    },
+    "src/client.js": {
+      "upstream": "16223e03cc8565a06736b18916867b408bf8d66078d66c299a3212d298008302",
+      "vendored": "16223e03cc8565a06736b18916867b408bf8d66078d66c299a3212d298008302"
+    },
+    "src/crypto/index.js": {
+      "upstream": "7b03fc03b2d3d7b75a7e77dfa5e5af9c8b7825bb2154e2baff3fa4b2615e6c44",
+      "vendored": "7b03fc03b2d3d7b75a7e77dfa5e5af9c8b7825bb2154e2baff3fa4b2615e6c44"
+    },
+    "src/http.js": {
+      "upstream": "93358bcde8ae34fcc8a4e092a6ea2470cb50e6a0d3db838c8e5a7ed197b2a91a",
+      "vendored": "93358bcde8ae34fcc8a4e092a6ea2470cb50e6a0d3db838c8e5a7ed197b2a91a"
+    },
+    "src/index.js": {
+      "upstream": "8f5c48cfd2f564e7fcb03091488d5c57af588838bf7b08d601d2c8f36029372c",
+      "vendored": "952da2142f4d081dac07816a3792305d05a381c3bb4321e2611062b7dc629dbf"
+    },
+    "src/logger.js": {
+      "upstream": "a3ec624f417cd84e522c1f1a2584fca7a34599466cb067bacfd9f549c7e9fc7a",
+      "vendored": "a3ec624f417cd84e522c1f1a2584fca7a34599466cb067bacfd9f549c7e9fc7a"
+    },
+    "src/util.js": {
+      "upstream": "caf2b67e44ab4a41b308843b73ff96c148f50202130df4a2cfa83c20999e8b77",
+      "vendored": "caf2b67e44ab4a41b308843b73ff96c148f50202130df4a2cfa83c20999e8b77"
+    },
+    "src/verify.js": {
+      "upstream": "a4b79ba1505736c6f26c01bc7b617ed64810264caed6cfca831b37fef6bd11c9",
+      "vendored": "a4b79ba1505736c6f26c01bc7b617ed64810264caed6cfca831b37fef6bd11c9"
+    },
+    "types/index.d.ts": {
+      "upstream": "6330a28d002091082bba051ba618f0fe724087f6960f887c513c6ac19aa82471",
+      "vendored": "15eab7ae03b87e94f37eb7020f7ad926eac24ba7e3e3735daaa80d45a585ffd9"
+    },
+    "types/rfc8555.d.ts": {
+      "upstream": "81a197dd91c64bfdc23f235ea54073bfcadac65dde7b2517161c91f210f37721",
+      "vendored": "81a197dd91c64bfdc23f235ea54073bfcadac65dde7b2517161c91f210f37721"
+    }
+  }
+}

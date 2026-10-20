@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Reviewed upstream dependency; retain its source hashes and CommonJS style.
+    "vendor/**",
   ]),
 ]);
 

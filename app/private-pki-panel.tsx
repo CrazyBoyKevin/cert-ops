@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Download, Plus, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { messages, type Language } from "@/lib/i18n";
 import { pkiMessages } from "@/lib/private-pki-i18n";
 import { pkiManagementMessages } from "@/lib/pki-management-i18n";
 import { navigationMessages } from "@/lib/navigation-i18n";
 import { rootDeletionMessages } from "@/lib/root-deletion-i18n";
+import { certificatesInScope } from "@/lib/certificate-scope";
 import { loginHref } from "@/lib/app-route";
 import type { Certificate, Group } from "@/lib/types";
 
@@ -36,7 +37,7 @@ function Validity({ value, onChange, language, root = false }: { value: number; 
   return <label><span>{pkiMessages(language).days}</span><select value={value} onChange={e => onChange(Number(e.target.value))}>{(root ? [1825, 3650, 7300] : [30, 90, 180, 365]).map(days => <option key={days} value={days}>{days}</option>)}</select></label>;
 }
 
-export function PrivateCaSettings({ language, onManage, onChanged }: { language: Language; onManage?: (id: string) => void; onChanged?: () => void }) {
+export function PrivateCaSettings({ language, onChanged }: { language: Language; onChanged?: () => void }) {
   const copy = pkiMessages(language), common = messages[language], management = pkiManagementMessages(language);
   const deletion = rootDeletionMessages(language);
   const [deleteTarget, setDeleteTarget] = useState<Authority | null>(null), [deleteError, setDeleteError] = useState<unknown>(null);
@@ -46,6 +47,7 @@ export function PrivateCaSettings({ language, onManage, onChanged }: { language:
   const [subject, setSubject] = useState({ CN: "", O: "", OU: "", C: "", ST: "", L: "" });
   const [search, setSearch] = useState(""), [page, setPage] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [servicesRoot, setServicesRoot] = useState<Authority | null>(null);
   useEffect(() => { let active = true; api().then(data => { if (active) setRoots(data); }).catch(e => { if (active) setError(e); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
   async function create(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null); setSuccess("");
@@ -75,12 +77,53 @@ export function PrivateCaSettings({ language, onManage, onChanged }: { language:
     <Feedback error={error} success={success} language={language} />
     {open && <form className="pki-form pki-card" onSubmit={create}><fieldset disabled={busy}><div className="form-grid two">{(Object.keys(subject) as (keyof typeof subject)[]).map(key => <label key={key}><span>{copy[key]}{key === "CN" ? " *" : ""}</span><input required={key === "CN"} maxLength={key === "C" ? 2 : ["ST", "L"].includes(key) ? 128 : 64} value={subject[key]} onChange={e => setSubject({ ...subject, [key]: e.target.value })} /></label>)}</div><Validity root value={days} onChange={setDays} language={language} /><div className="pki-actions"><button type="button" className="ghost-button" onClick={() => setOpen(false)}>{common.cancel}</button><button className="primary-button">{busy ? copy.busy : copy.createRoot}</button></div></fieldset></form>}
     {loading ? <p>{common.loadingContent}</p> : <><input className="pki-search" aria-label={management.rootSearch} placeholder={management.rootSearch} value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
-      <div className="pki-list">{filtered.slice(page * 5, page * 5 + 5).map(root => <article className="pki-card" key={root.id}><div className="pki-ca-heading"><strong>{root.subject.CN}</strong><span className={`acme-state ${root.hasPrivateKey ? "issued" : ""}`}>{root.hasPrivateKey ? management.signing : management.readOnly}</span></div><p>{Object.entries(root.subject).filter(([key]) => key !== "CN").map(([key, value]) => `${key}=${value}`).join(" · ")}</p><p>{common.expiryDate}: {date(root.expiresAt, language)}</p><code className="pki-fingerprint">SHA-256: {root.fingerprint}</code><div className="pki-actions">{onManage && <button className="secondary-button" onClick={() => onManage(root.id)}>{navigationMessages(language).allProjectServices} · {root.serviceCount}</button>}<button className="secondary-button" disabled={busy} onClick={() => void exportRoot(root.id, "pem")}><Download size={14} />.crt</button><button className="secondary-button" disabled={busy} onClick={() => void exportRoot(root.id, "der")}><Download size={14} />.cer</button><button className="group-delete-button" disabled={busy || root.serviceCount > 0} aria-label={`${deletion.deleteRoot} ${root.subject.CN}`} title={root.serviceCount > 0 ? deletion.blocked.replace("{count}", String(root.serviceCount)) : deletion.deleteRoot} onClick={() => { setDeleteError(null); setDeleteTarget(root); }}><Trash2 size={14} />{deletion.deleteRoot}</button></div>{root.serviceCount > 0 && <p className="pki-note root-delete-blocked">{deletion.blocked.replace("{count}", String(root.serviceCount))}</p>}</article>)}</div>
+      <div className="pki-list">{filtered.slice(page * 5, page * 5 + 5).map(root => <article className="pki-card" key={root.id}><div className="pki-ca-heading"><strong>{root.subject.CN}</strong><span className={`acme-state ${root.hasPrivateKey ? "issued" : ""}`}>{root.hasPrivateKey ? management.signing : management.readOnly}</span></div><p>{Object.entries(root.subject).filter(([key]) => key !== "CN").map(([key, value]) => `${key}=${value}`).join(" · ")}</p><p>{common.expiryDate}: {date(root.expiresAt, language)}</p><code className="pki-fingerprint">SHA-256: {root.fingerprint}</code><div className="pki-actions"><button className="secondary-button" onClick={() => setServicesRoot(root)}>{navigationMessages(language).allProjectServices} · {root.serviceCount}</button><button className="secondary-button" disabled={busy} onClick={() => void exportRoot(root.id, "pem")}><Download size={14} />.crt</button><button className="secondary-button" disabled={busy} onClick={() => void exportRoot(root.id, "der")}><Download size={14} />.cer</button><button className="group-delete-button" disabled={busy || root.serviceCount > 0} aria-label={`${deletion.deleteRoot} ${root.subject.CN}`} title={root.serviceCount > 0 ? deletion.blocked.replace("{count}", String(root.serviceCount)) : deletion.deleteRoot} onClick={() => { setDeleteError(null); setDeleteTarget(root); }}><Trash2 size={14} />{deletion.deleteRoot}</button></div>{root.serviceCount > 0 && <p className="pki-note root-delete-blocked">{deletion.blocked.replace("{count}", String(root.serviceCount))}</p>}</article>)}</div>
       {!filtered.length && <p className="pki-note">{roots.length ? common.noResults : management.noRoots}</p>}
       {filtered.length > 5 && <div className="pki-pagination"><button className="ghost-button" disabled={!page} onClick={() => setPage(page - 1)}>{copy.previous}</button><span>{page + 1} / {Math.ceil(filtered.length / 5)}</span><button className="ghost-button" disabled={(page + 1) * 5 >= filtered.length} onClick={() => setPage(page + 1)}>{copy.next}</button></div>}</>}
+    {servicesRoot && <RootServicesModal root={servicesRoot} language={language} onClose={() => setServicesRoot(null)} />}
     {importOpen && <PrivateImportModal language={language} onClose={() => setImportOpen(false)} onImported={() => { setImportOpen(false); setSuccess(management.imported); void api().then(setRoots).catch(setError); onChanged?.(); }} />}
     {deleteTarget && <div className="modal-backdrop" onMouseDown={event => { if (!busy && event.target === event.currentTarget) setDeleteTarget(null); }}><div className="modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-root-title"><button className="modal-close" aria-label={common.cancel} disabled={busy} onClick={() => setDeleteTarget(null)}><X size={19} /></button><span className="danger-icon"><Trash2 size={22} /></span><h2 id="delete-root-title">{deletion.title}</h2><p>{deletion.warning}</p><div className="delete-cert"><ShieldCheck size={18} /><span><strong>{deleteTarget.subject.CN}</strong><small>{deleteTarget.id}</small></span></div><code className="pki-fingerprint">SHA-256: {deleteTarget.fingerprint}</code><Feedback error={deleteError} language={language} />{deleteTarget.serviceCount > 0 && <p className="pki-feedback error">{deletion.blocked.replace("{count}", String(deleteTarget.serviceCount))}</p>}<div className="modal-actions"><button className="ghost-button" disabled={busy} onClick={() => setDeleteTarget(null)}>{common.cancel}</button><button className="danger-button" disabled={busy || deleteTarget.serviceCount > 0} onClick={() => void deleteRoot()}>{busy ? common.deleting : deletion.deleteRoot}</button></div></div></div>}
   </div>;
+}
+
+function RootServicesModal({ root, language, onClose }: { root: Authority; language: Language; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const common = messages[language];
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [loading, setLoading] = useState(true), [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch("/api/certificates", { cache: "no-store", signal: controller.signal });
+        if (response.status === 401) { window.location.replace(loginHref(window.location.pathname + window.location.search)); return; }
+        if (!response.ok) throw new Error("SERVICE_UNAVAILABLE");
+        const result = await response.json();
+        if (!controller.signal.aborted) setCertificates(certificatesInScope(result.data || [], "private", root.id));
+      } catch (error) { if (!controller.signal.aborted) setError(error); }
+      finally { if (!controller.signal.aborted) setLoading(false); }
+    }
+    void load();
+    return () => { controller.abort(); element?.close(); };
+  }, [root.id]);
+  return <dialog ref={dialog} className="modal root-services-modal" aria-labelledby="root-services-title" onCancel={onClose} onClick={event => {
+    if (event.target !== event.currentTarget) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
+  }}>
+    <button className="modal-close" aria-label={common.cancel} onClick={onClose}><X size={19} /></button>
+    <div className="modal-title-row"><span className="title-icon"><ShieldCheck size={20} /></span><div><h2 id="root-services-title">{navigationMessages(language).caServices}</h2><p>{root.subject.CN}{!loading && !error ? ` · ${certificates.length}` : ""}</p></div></div>
+    <Feedback error={error} language={language} />
+    {loading ? <p className="root-services-state" role="status">{common.loadingContent}</p> : !error && (certificates.length ? <div className="table-wrap root-services-table"><table>
+      <thead><tr><th>{common.certDomain}</th><th>{common.project}</th><th>{common.expiryDate}</th></tr></thead>
+      <tbody>{certificates.map(certificate => <tr key={certificate.id}>
+        <td><strong>{certificate.name}</strong><small>{certificate.domains.join(" · ") || certificate.primaryDomain}</small></td>
+        <td>{certificate.groupName || "—"}</td><td>{date(certificate.expiresAt, language)}</td>
+      </tr>)}</tbody>
+    </table></div> : <p className="root-services-state">{common.noCertificates}</p>)}
+  </dialog>;
 }
 
 export function PrivateIssueModal({ language, groups, initialGroup, initialAuthority, onClose, onIssued, onConfigure }: { language: Language; groups: Group[]; initialGroup: string; initialAuthority?: string; onClose: () => void; onIssued: (id: string) => void; onConfigure: () => void }) {

@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { privatePkiCases } from "./private-pki.integration-cases.mjs";
+import { platformHttpsCases } from "./platform-https.integration-cases.mjs";
 
 const exec = promisify(execFile);
 const suffix = randomBytes(4).toString("hex");
@@ -43,7 +44,9 @@ try {
   console.log("Isolated PostgreSQL ready; no user database or real DNS credentials used.");
   for (const arch of ["arm64", "amd64"]) {
     const appId = `certops-release-${arch}-${suffix}`;
-    const args = ["run", "--rm", "--detach", "--name", appId, "--arch", arch, "--memory", "1G"];
+    const tlsDirectory = path.join(scratch, `https-${arch}`);
+    await mkdir(tlsDirectory, { mode: 0o700 });
+    const args = ["run", "--rm", "--detach", "--name", appId, "--arch", arch, "--memory", "1G", "-v", `${tlsDirectory}:/app/data`, "-e", "CERTOPS_DATA_DIR=/app/data", "-e", "CERTOPS_HTTPS_PORT=9443"];
     for (const key of ["DATABASE_URL", "CERTOPS_ADMIN_USERNAME", "CERTOPS_ADMIN_PASSWORD", "CERTOPS_SESSION_SECRET", "CERT_ENCRYPTION_KEY", "ACME_SCHEDULER_ENABLED"]) args.push("-e", key);
     args.push(image); await command(...args); active.push(appId);
     const base = `http://${await ipOf(appId)}:3000`;
@@ -52,7 +55,7 @@ try {
     const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: env.CERTOPS_ADMIN_USERNAME, password: env.CERTOPS_ADMIN_PASSWORD }) });
     assert.equal(login.status, 200);
     const cookie = login.headers.get("set-cookie").split(";")[0];
-    for (const page of ["/settings", "/settings?tab=acme", "/?view=roots"]) {
+    for (const page of ["/settings", "/settings?tab=acme", "/settings?tab=https", "/?view=roots"]) {
       assert.equal((await fetch(base + page, { headers: { Cookie: cookie }, redirect: "manual" })).status, 200);
     }
     async function api(route, body, method = "POST", expected = 200) {
@@ -169,7 +172,9 @@ try {
     assert.equal(report.arch, arch === "amd64" ? "x64" : "arm64");
     await command("exec", appId, "openssl", "version");
     await command("exec", appId, "test", "-f", "db/private-pki.sql");
-    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", requestRenewalSeparation: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed", privatePki: "passed", settingsRoutes: "passed" }));
+    await command("exec", appId, "node", "--input-type=module", "-e", 'import assert from "node:assert/strict"; import {createRequire} from "node:module"; const require=createRequire(import.meta.url); assert.throws(()=>require.resolve("node-forge"), {code:"MODULE_NOT_FOUND"}); assert.equal(require("nodemailer/package.json").version,"10.1.7"); assert.equal(require("acme-client").forge,undefined);');
+    await platformHttpsCases({ base, cookie, env: { ...env, CERTOPS_DATA_DIR: tlsDirectory, CERTOPS_HTTPS_PORT: "9443" }, scratch });
+    console.log(JSON.stringify({ ...report, login: "passed", database: "passed", multiAccount: "passed", manualDns: "passed", acmeQueue: "passed", requestRenewalSeparation: "passed", encryptedStorage: "passed", renewalPersistence: "passed", pemKeyExport: "passed", deletionCascade: "passed", privatePki: "passed", settingsRoutes: "passed", https: "passed", securityDependencies: "passed" }));
     await command("stop", appId); active.splice(active.indexOf(appId), 1);
   }
   console.log("Release smoke tests passed for both platforms.");

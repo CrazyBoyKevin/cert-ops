@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { AlertCircle, LoaderCircle, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { safeReturnHref } from "@/lib/app-route";
+import { Brand } from "../brand";
 
 export default function LoginForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -39,31 +41,28 @@ export default function LoginForm() {
 
   return (
     <main className="login-shell">
-      <section className="login-panel" aria-labelledby="login-title">
-        <div className="login-brand">
-          <span className="login-brand-mark"><ShieldCheck size={25} /></span>
-          <span>CertOps</span>
-        </div>
-        <div className="login-heading">
-          <span className="login-lock"><LockKeyhole size={20} /></span>
-          <h1 id="login-title">登录管理平台</h1>
-          <p>使用容器环境变量中配置的管理员账号登录</p>
-        </div>
+      <section className="login-panel" aria-label="CertOps 登录">
+        <Brand appearance="login" />
         <form className="login-form" onSubmit={submit}>
           <label>
             <span>用户名</span>
             <span className="login-input"><UserRound size={17} /><input autoFocus autoComplete="username" name="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入管理员用户名" required /></span>
           </label>
-          <label>
-            <span>密码</span>
-            <span className="login-input"><LockKeyhole size={17} /><input autoComplete="current-password" name="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入管理员密码" required /></span>
-          </label>
+          <div className="login-field">
+            <label htmlFor="login-password">密码</label>
+            <div className="login-input">
+              <LockKeyhole size={17} aria-hidden="true" />
+              <input id="login-password" autoComplete="current-password" name="password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入管理员密码" required />
+              <button className="login-password-toggle" type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-controls="login-password" title={showPassword ? "隐藏密码" : "显示密码"} onClick={() => setShowPassword(value => !value)}>
+                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
           {error && <div className="login-error" role="alert"><AlertCircle size={16} /><span>{error}</span></div>}
           <button className="login-submit" type="submit" disabled={submitting || !username || !password}>
             {submitting ? <><LoaderCircle className="spinning" size={17} />正在登录…</> : "登录"}
           </button>
         </form>
-        <p className="login-footnote">账号由系统管理员在部署时配置，本系统不提供在线注册。</p>
       </section>
     </main>
   );
